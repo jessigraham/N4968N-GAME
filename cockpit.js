@@ -271,7 +271,12 @@ function windshield(ctx, p, t, L, R, T, opt) {
   ctx.restore();
 
   // cabin frame: headliner, gold window posts, side windows
-  ctx.fillStyle = '#d9d2c2'; ctx.fillRect(L, T, R - L, 24 - T);
+  const hl = ctx.createLinearGradient(0, T, 0, 24);
+  hl.addColorStop(0, '#5d574c'); hl.addColorStop(0.7, '#9b9382'); hl.addColorStop(1, '#bdb4a0');
+  ctx.fillStyle = hl; ctx.fillRect(L, T, R - L, 24 - T);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 2;
+  for (let y = 10; y > T; y -= 46) { ctx.beginPath(); ctx.moveTo(L, y); ctx.quadraticCurveTo(800, y - 14, R, y); ctx.stroke(); }
+  if (T < -40) { ctx.fillStyle = '#d8d2c4'; rr(ctx, 760, Math.max(T + 10, -70), 80, 26, 10); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.stroke(); }
   ctx.fillStyle = '#b7a46a';
   ctx.fillRect(L, 18, R - L, 10);
   const post = (x0, x1, x2, x3) => {
@@ -442,7 +447,7 @@ function yoke(ctx, pulled) {
 
 // ---------- the cabin below and beside the panel ----------
 // trouser color by character, and bare knees for shorts
-const PANTS = { ivy: ['#2e3340', null], wren: ['#7c6b47', null], elias: ['#2b2f3a', null], kip: ['#8c7850', '#7a4e33'] };
+const PANTS = { ivy: ['#454c62', null], wren: ['#7c6b47', null], elias: ['#3d4352', null], kip: ['#8c7850', '#7a4e33'] };
 function interior(ctx, p, t, L, R, B, kneeboard) {
   const fy = 820;
   // kick panel under the dash, then the carpet
@@ -454,8 +459,18 @@ function interior(ctx, p, t, L, R, B, kneeboard) {
     g = ctx.createLinearGradient(0, cy, 0, B);
     g.addColorStop(0, '#4a3523'); g.addColorStop(1, '#2a1c12');
     ctx.fillStyle = g; ctx.fillRect(L, cy, R - L, B - cy);
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';   // carpet weave
-    for (let y = cy; y < B; y += 6) for (let x = Math.floor(L / 9) * 9 + ((y / 6) % 2) * 4; x < R; x += 9) ctx.fillRect(x, y, 3, 2);
+    for (let y = cy; y < B; y += 5) {          // carpet pile: light and dark flecks
+      for (let x = Math.floor(L / 7) * 7 + ((y / 5) % 2) * 3; x < R; x += 7) {
+        const n = ((x * 73856093) ^ (y * 19349663)) & 7;
+        ctx.fillStyle = n < 3 ? 'rgba(0,0,0,0.2)' : n > 5 ? 'rgba(255,220,180,0.06)' : 'rgba(0,0,0,0.08)';
+        ctx.fillRect(x, y, 3, 2);
+      }
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(L, cy - 2, R - L, 5);          // where the kick panel meets the floor
+    ctx.fillStyle = 'rgba(255,220,180,0.08)'; ctx.fillRect(L, cy + 3, R - L, 2);
+    for (const px of [380, 520, 1080, 1220]) {     // pedal shadows on the carpet
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(px - 12, cy + 18, 40, 12, 0, 0, TAU); ctx.fill();
+    }
     for (const wx of [450, 1150]) {         // worn spots under the pedals
       const w = ctx.createRadialGradient(wx, cy + 40, 0, wx, cy + 40, 160);
       w.addColorStop(0, 'rgba(150,120,90,0.25)'); w.addColorStop(1, 'rgba(150,120,90,0)');
@@ -475,7 +490,11 @@ function interior(ctx, p, t, L, R, B, kneeboard) {
   // center console between the seats: the trim wheel beside the fuel selector
   g = ctx.createLinearGradient(780, 0, 980, 0);
   g.addColorStop(0, '#141416'); g.addColorStop(0.5, '#26262a'); g.addColorStop(1, '#141416');
-  ctx.fillStyle = g; rr(ctx, 790, fy, 180, Math.max(90, B - fy + 40), 14); ctx.fill();
+  ctx.fillStyle = g;
+  // a short pedestal that flares onto the floor (the 172 has no tall console)
+  const pb = Math.min(B + 40, fy + 175);
+  ctx.beginPath(); ctx.moveTo(826, fy); ctx.lineTo(934, fy); ctx.quadraticCurveTo(944, pb - 40, 980, pb); ctx.lineTo(780, pb); ctx.quadraticCurveTo(816, pb - 40, 826, fy); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(880, pb, 110, 14, 0, 0, TAU); ctx.fill();
   ctx.fillStyle = '#060607'; rr(ctx, 798, fy + 18, 22, 70, 6); ctx.fill();
   ctx.fillStyle = '#2f3034'; ctx.beginPath(); ctx.ellipse(809, fy + 53 + Math.sin(t * 0.3) * 2, 9, 30, 0, 0, TAU); ctx.fill();
   ctx.strokeStyle = '#4a4c52'; ctx.lineWidth = 2;
@@ -484,27 +503,49 @@ function interior(ctx, p, t, L, R, B, kneeboard) {
   // lower edge of the panel
   ctx.fillStyle = '#0a0a0b'; rr(ctx, 14, fy - 8, VW - 28, 18, 8); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(30, fy - 7, VW - 60, 2);
-  // the pilot's knees in the character's trousers
+  // the pilot's lap: knees just below the panel, thighs coming toward you, lit by the windshield
   if (B > fy + 120) {
     const [pant, skin] = PANTS[p.char] || PANTS.ivy;
-    for (const kx of [335, 565]) {
-      const ky = fy + 125;
-      const kg = ctx.createLinearGradient(kx - 80, 0, kx + 80, 0);
-      kg.addColorStop(0, shadeHex(pant, 0.7)); kg.addColorStop(0.45, shadeHex(pant, 1.2)); kg.addColorStop(1, shadeHex(pant, 0.65));
-      ctx.fillStyle = kg;
-      ctx.beginPath(); ctx.moveTo(kx - 92, B + 20); ctx.lineTo(kx - 78, ky + 40);
-      ctx.quadraticCurveTo(kx, ky - 40, kx + 78, ky + 40); ctx.lineTo(kx + 92, B + 20); ctx.closePath(); ctx.fill();
-      if (skin) {   // shorts: bare knees
-        ctx.fillStyle = skin; ctx.beginPath(); ctx.ellipse(kx, ky + 22, 60, 44, 0, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = pant; ctx.fillRect(kx - 84, ky + 50, 168, 16);
+    const ky = fy + 175, bottom = B + 40;
+    ctx.fillStyle = '#5e4a2f';   // seat cushions either side of the lap
+    rr(ctx, 120, ky + 120, 130, bottom - ky, 24); ctx.fill();
+    rr(ctx, 650, ky + 120, 130, bottom - ky, 24); ctx.fill();
+    // the lap between the thighs, in shadow
+    const lap = ctx.createLinearGradient(0, ky + 150, 0, bottom);
+    lap.addColorStop(0, shadeHex(pant, 0.45)); lap.addColorStop(1, shadeHex(pant, 0.3));
+    ctx.fillStyle = lap; ctx.beginPath(); ctx.moveTo(400, ky + 150); ctx.lineTo(500, ky + 150); ctx.lineTo(560, bottom); ctx.lineTo(340, bottom); ctx.fill();
+    for (const [kx, lean] of [[330, -1], [570, 1]]) {
+      const nearX = kx - lean * 75;   // the thighs come toward you and meet at the lap
+      const thigh = () => {
+        ctx.beginPath(); ctx.moveTo(kx - 64, ky + 22);
+        ctx.quadraticCurveTo(kx, ky - 36, kx + 64, ky + 22);
+        ctx.lineTo(nearX + 175, bottom); ctx.lineTo(nearX - 175, bottom); ctx.closePath();
+      };
+      const lit = ctx.createLinearGradient(0, ky - 30, 0, bottom);
+      lit.addColorStop(0, shadeHex(skin || pant, 1.45)); lit.addColorStop(0.35, shadeHex(skin || pant, 1.05)); lit.addColorStop(1, shadeHex(skin || pant, 0.45));
+      ctx.fillStyle = lit; thigh(); ctx.fill();
+      if (skin) {   // shorts: bare knee, then the khaki hem down the thigh
+        ctx.save(); thigh(); ctx.clip();
+        const sh = ctx.createLinearGradient(0, ky + 70, 0, bottom);
+        sh.addColorStop(0, shadeHex(pant, 1.25)); sh.addColorStop(1, shadeHex(pant, 0.5));
+        ctx.fillStyle = sh; ctx.fillRect(kx - 200, ky + 74, 400, bottom);
+        ctx.fillStyle = shadeHex(pant, 0.7); ctx.fillRect(kx - 200, ky + 74, 400, 8);
+        ctx.restore();
       }
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;   // a crease
-      ctx.beginPath(); ctx.moveTo(kx - 20, ky + 60); ctx.quadraticCurveTo(kx - 6, ky + 120, kx - 24, B); ctx.stroke();
+      // roundness: darker along the outer edge, a soft highlight on the kneecap
+      ctx.save(); thigh(); ctx.clip();
+      const side = ctx.createLinearGradient(kx - 130, 0, kx + 130, 0);
+      side.addColorStop(0, 'rgba(0,0,0,0.45)'); side.addColorStop(0.45, 'rgba(0,0,0,0)'); side.addColorStop(1, 'rgba(0,0,0,0.5)');
+      ctx.fillStyle = side; ctx.fillRect(kx - 200, ky - 40, 400, bottom);
+      ctx.fillStyle = 'rgba(255,230,200,0.14)'; ctx.beginPath(); ctx.ellipse(kx, ky + 4, 40, 15, 0, 0, TAU); ctx.fill();
+      // fabric folds from the knee
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (const d of [-22, 14]) { ctx.beginPath(); ctx.moveTo(kx + d, ky + 34); ctx.quadraticCurveTo(kx + d * 1.6 - lean * 10, ky + 110, kx + d * 2.2 - lean * 24, ky + 190); ctx.stroke(); }
+      ctx.restore();
     }
     if (kneeboard) {   // a clipboard strapped to the right thigh
-      ctx.fillStyle = '#5a3b22'; rr(ctx, 452, fy + 160, 250, Math.min(330, B - fy - 150), 10); ctx.fill();
-      ctx.fillStyle = '#b8bcc4'; rr(ctx, 540, fy + 150, 76, 26, 5); ctx.fill();
-      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(452, fy + 300, 250, 12);   // the strap
+      ctx.fillStyle = '#5a3b22'; rr(ctx, 452, fy + 190, 250, Math.min(330, B - fy - 170), 10); ctx.fill();
+      ctx.fillStyle = '#b8bcc4'; rr(ctx, 540, fy + 180, 76, 26, 5); ctx.fill();
     }
   }
   // door panels and armrests on either side, when the screen is wide enough to show them
@@ -529,7 +570,7 @@ function shadeHex(hex, k) {
 
 function panel(ctx, p, t, L, R, B, opt) {
   // the cabin, then the black panel
-  const kneeboard = B > 1240 && !opt.mini;
+  const kneeboard = B > 1300 && !opt.mini;
   interior(ctx, p, t, L, R, B, kneeboard);
   ctx.fillStyle = '#141416'; rr(ctx, 14, 438, VW - 28, 386, 26); ctx.fill();
   // scuffs and scratches on the old panel paint
@@ -579,7 +620,7 @@ function panel(ctx, p, t, L, R, B, opt) {
   fuelSelector(ctx, 880, 862, p.fuel);
   flapLever(ctx, p);
   if (kneeboard) {
-    ctx.save(); ctx.translate(462, 990); ctx.rotate(-0.025); ctx.scale(0.84, 0.84); ctx.translate(-1108, -462);
+    ctx.save(); ctx.translate(462, 1020); ctx.rotate(-0.03); ctx.scale(0.84, 0.84); ctx.translate(-1108, -462);
     checklistCard(ctx, p, false, opt.cardHighlight !== false);
     ctx.restore();
     // a clock and placards where the card used to be
@@ -652,7 +693,8 @@ G.drawCockpit = (ctx, p, cw, ch, t, opt) => {
   // the "camera" crops off the sky and roof so the panel fills most of the screen
   const C = G.CAMERA, s = Math.min(cw / C.w, ch / C.h);
   const slack = ch - C.h * s;
-  const ox = (cw - C.w * s) / 2 - C.x * s, oy = (slack > 0 ? 0 : slack / 2) - C.y * s;
+  // on tall screens, give some of the extra height to a taller windshield and the rest to the cabin
+  const ox = (cw - C.w * s) / 2 - C.x * s, oy = (slack > 0 ? slack * 0.4 : slack / 2) - C.y * s;
   p.view = { s, ox, oy };
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, cw, ch);
