@@ -44,28 +44,7 @@ function txt(ctx, s, x, y, size, color, align = 'center', weight = 600, mono = f
   ctx.fillText(s, x, y);
 }
 function circle(ctx, x, y, r, fill) { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); }
-function needle(ctx, x, y, len, a, w, color) {
-  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * len * 0.15, y - Math.sin(a) * len * 0.15);
-  ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); ctx.stroke();
-  circle(ctx, x, y, w * 1.3, '#333');
-}
 function screw(ctx, x, y) { circle(ctx, x, y, 4, '#55585e'); ctx.strokeStyle = '#222'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); ctx.stroke(); }
-function dialBase(ctx, x, y, r) {
-  circle(ctx, x, y, r + 7, '#151517');
-  circle(ctx, x, y, r + 3, '#2a2b2f');
-  circle(ctx, x, y, r, '#0c0c0e');
-  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) screw(ctx, x + dx * (r + 6) * 0.86, y + dy * (r + 6) * 0.86);
-}
-function ticks(ctx, x, y, r, angOf, from, to, step, len, w, color) {
-  ctx.strokeStyle = color; ctx.lineWidth = w;
-  for (let v = from; v <= to + 1e-6; v += step) {
-    const a = angOf(v);
-    ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
-    ctx.lineTo(x + Math.cos(a) * (r - len), y + Math.sin(a) * (r - len)); ctx.stroke();
-  }
-}
-function arcBand(ctx, x, y, r, a0, a1, w, color) { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'butt'; ctx.beginPath(); ctx.arc(x, y, r, a0, a1); ctx.stroke(); }
 
 // ---------- zombies ----------
 // A zombie walking toward you. `haze` (0..1) fades distant ones into the dusk air.
@@ -325,100 +304,7 @@ function windshield(ctx, p, t, L, R, T, opt) {
   txt(ctx, '“CLEAR!”', c.x + c.w / 2, c.y + 70, 22, '#fff', 'center', 800);
 }
 
-// ---------- instrument panel ----------
-function asi(ctx, x, y, r, kt) {
-  dialBase(ctx, x, y, r);
-  const A = v => -Math.PI / 2 + clamp(v, 0, 200) / 200 * TAU * 0.92;
-  arcBand(ctx, x, y, r * 0.72, A(33), A(85), 6, '#f2f2f2');
-  arcBand(ctx, x, y, r * 0.84, A(41), A(129), 7, '#2ecc71');
-  arcBand(ctx, x, y, r * 0.84, A(129), A(163), 7, '#f1c40f');
-  ticks(ctx, x, y, r * 0.95, A, 20, 200, 10, 7, 2, '#ddd');
-  ticks(ctx, x, y, r * 0.95, A, 163, 163, 1, 14, 4, '#e74c3c');
-  for (let v = 40; v <= 160; v += 20) { const a = A(v); txt(ctx, String(v), x + Math.cos(a) * r * 0.58, y + Math.sin(a) * r * 0.58, 12, '#eee', 'center', 700); }
-  txt(ctx, 'AIRSPEED', x, y - r * 0.26, 9, '#bbb'); txt(ctx, 'KNOTS', x, y + r * 0.3, 9, '#bbb');
-  needle(ctx, x, y, r * 0.82, A(kt), 4, '#fff');
-}
-function attitude(ctx, x, y, r, pitch) {
-  dialBase(ctx, x, y, r);
-  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r - 1, 0, TAU); ctx.clip();
-  const off = pitch * r * 2.4;
-  ctx.fillStyle = '#3d8fd6'; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
-  ctx.fillStyle = '#8b5a2b'; ctx.fillRect(x - r, y + off, 2 * r, 2 * r);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(x - r, y + off); ctx.lineTo(x + r, y + off); ctx.stroke();
-  for (const d of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x - r * 0.25, y + off + d * r * 0.3); ctx.lineTo(x + r * 0.25, y + off + d * r * 0.3); ctx.stroke(); }
-  ctx.restore();
-  ctx.strokeStyle = '#ff9f1a'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(x - r * 0.6, y); ctx.lineTo(x - r * 0.2, y); ctx.lineTo(x - r * 0.1, y + 8);
-  ctx.moveTo(x + r * 0.6, y); ctx.lineTo(x + r * 0.2, y); ctx.lineTo(x + r * 0.1, y + 8); ctx.stroke();
-  circle(ctx, x, y, 3, '#ff9f1a');
-}
-function altimeter(ctx, x, y, r, ft) {
-  dialBase(ctx, x, y, r);
-  const A = v => -Math.PI / 2 + v / 10 * TAU;
-  ticks(ctx, x, y, r * 0.95, A, 0, 9.8, 0.2, 5, 1.5, '#ccc');
-  for (let v = 0; v < 10; v++) { const a = A(v); txt(ctx, String(v), x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.7, 14, '#eee', 'center', 700); }
-  txt(ctx, 'ALT', x, y + r * 0.32, 9, '#bbb');
-  needle(ctx, x, y, r * 0.5, A(ft / 1000 % 10), 5, '#fff');
-  needle(ctx, x, y, r * 0.82, A(ft / 100 % 10), 3, '#fff');
-}
-function turnCoord(ctx, x, y, r) {
-  dialBase(ctx, x, y, r);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(x - r * 0.6, y); ctx.lineTo(x + r * 0.6, y); ctx.moveTo(x, y - r * 0.18); ctx.lineTo(x, y + r * 0.1); ctx.stroke();
-  circle(ctx, x, y, 6, '#fff');
-  rr(ctx, x - r * 0.4, y + r * 0.42, r * 0.8, 14, 7); ctx.fillStyle = '#e8e2c8'; ctx.fill();
-  circle(ctx, x, y + r * 0.42 + 7, 6, '#111');
-  txt(ctx, 'L', x - r * 0.72, y + r * 0.12, 11, '#eee'); txt(ctx, 'R', x + r * 0.72, y + r * 0.12, 11, '#eee');
-}
-function heading(ctx, x, y, r, hdg) {
-  dialBase(ctx, x, y, r);
-  ctx.save(); ctx.translate(x, y); ctx.rotate(-hdg * Math.PI / 180);
-  const labels = ['N', '3', '6', 'E', '12', '15', 'S', '21', '24', 'W', '30', '33'];
-  for (let i = 0; i < 36; i++) {
-    const a = i * TAU / 36 - Math.PI / 2;
-    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.95, Math.sin(a) * r * 0.95); ctx.lineTo(Math.cos(a) * r * (i % 3 ? 0.88 : 0.8), Math.sin(a) * r * (i % 3 ? 0.88 : 0.8)); ctx.stroke();
-    if (i % 3 === 0) {
-      ctx.save(); ctx.rotate(i * TAU / 36); txt(ctx, labels[i / 3], 0, -r * 0.62, 12, '#eee', 'center', 700); ctx.restore();
-    }
-  }
-  ctx.restore();
-  ctx.strokeStyle = '#ff9f1a'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x, y - r * 0.78); ctx.stroke();
-  ctx.fillStyle = '#ff9f1a';
-  ctx.beginPath(); ctx.moveTo(x, y - 14); ctx.lineTo(x + 5, y + 10); ctx.lineTo(x - 5, y + 10); ctx.fill();
-  ctx.fillRect(x - 16, y - 2, 32, 4);
-}
-function vsi(ctx, x, y, r, fpm) {
-  dialBase(ctx, x, y, r);
-  const A = v => Math.PI + clamp(v, -2000, 2000) / 2000 * Math.PI * 0.9;
-  ticks(ctx, x, y, r * 0.95, A, -2000, 2000, 500, 8, 2, '#ddd');
-  for (const v of [5, 10, 15]) { for (const sgn of [-1, 1]) { const a = A(sgn * v * 100); txt(ctx, String(v), x + Math.cos(a) * r * 0.68, y + Math.sin(a) * r * 0.68, 11, '#eee', 'center', 700); } }
-  txt(ctx, 'UP', x - r * 0.3, y - r * 0.32, 9, '#bbb'); txt(ctx, 'DN', x - r * 0.3, y + r * 0.32, 9, '#bbb');
-  txt(ctx, 'VERT SPEED', x + r * 0.15, y + r * 0.02, 8, '#bbb');
-  needle(ctx, x, y, r * 0.8, A(fpm), 4, '#fff');
-}
-function tach(ctx, x, y, r, rpm) {
-  dialBase(ctx, x, y, r);
-  const A = v => Math.PI * 0.75 + clamp(v, 0, 3500) / 3500 * Math.PI * 1.5;
-  arcBand(ctx, x, y, r * 0.84, A(2100), A(2700), 7, '#2ecc71');
-  ticks(ctx, x, y, r * 0.95, A, 0, 3500, 100, 5, 1.5, '#ccc');
-  ticks(ctx, x, y, r * 0.95, A, 2700, 2700, 1, 14, 4, '#e74c3c');
-  for (let v = 0; v <= 35; v += 5) { const a = A(v * 100); txt(ctx, String(v), x + Math.cos(a) * r * 0.62, y + Math.sin(a) * r * 0.62, 12, '#eee', 'center', 700); }
-  txt(ctx, 'RPM', x, y - r * 0.28, 10, '#bbb'); txt(ctx, 'x100', x, y + r * 0.28, 8, '#bbb');
-  needle(ctx, x, y, r * 0.82, A(rpm), 4, '#fff');
-}
-function miniGauge(ctx, x, y, label, v, green, red) {
-  const r = 22;
-  const A = u => Math.PI + clamp(u, 0, 1) * Math.PI;
-  circle(ctx, x, y, r + 4, '#0c0c0e');
-  if (green) arcBand(ctx, x, y, r - 3, A(green[0]), A(green[1]), 5, '#2ecc71');
-  if (red) arcBand(ctx, x, y, r - 3, A(red[0]), A(red[1]), 5, '#e74c3c');
-  needle(ctx, x, y, r - 2, A(v), 2.5, '#fff');
-  txt(ctx, label, x, y + 16, 10, '#ddd', 'center', 700);
-}
-
+// ---------- instrument panel (the gauges themselves are in instruments.js) ----------
 function rockerToggle(ctx, x, y, label, on) {
   // small bat-handle toggle switch, like the rows in the photo
   circle(ctx, x, y, 11, '#9a9ca2');
@@ -554,12 +440,101 @@ function yoke(ctx, pulled) {
   ctx.restore();
 }
 
+// ---------- the cabin below and beside the panel ----------
+// trouser color by character, and bare knees for shorts
+const PANTS = { ivy: ['#2e3340', null], wren: ['#7c6b47', null], elias: ['#2b2f3a', null], kip: ['#8c7850', '#7a4e33'] };
+function interior(ctx, p, t, L, R, B, kneeboard) {
+  const fy = 820;
+  // kick panel under the dash, then the carpet
+  let g = ctx.createLinearGradient(0, fy, 0, fy + 170);
+  g.addColorStop(0, '#17161a'); g.addColorStop(1, '#2e241b');
+  ctx.fillStyle = g; ctx.fillRect(L, fy, R - L, Math.max(0, B - fy));
+  const cy = fy + 140;
+  if (B > cy) {
+    g = ctx.createLinearGradient(0, cy, 0, B);
+    g.addColorStop(0, '#4a3523'); g.addColorStop(1, '#2a1c12');
+    ctx.fillStyle = g; ctx.fillRect(L, cy, R - L, B - cy);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';   // carpet weave
+    for (let y = cy; y < B; y += 6) for (let x = Math.floor(L / 9) * 9 + ((y / 6) % 2) * 4; x < R; x += 9) ctx.fillRect(x, y, 3, 2);
+    for (const wx of [450, 1150]) {         // worn spots under the pedals
+      const w = ctx.createRadialGradient(wx, cy + 40, 0, wx, cy + 40, 160);
+      w.addColorStop(0, 'rgba(150,120,90,0.25)'); w.addColorStop(1, 'rgba(150,120,90,0)');
+      ctx.fillStyle = w; ctx.fillRect(wx - 160, cy - 120, 320, 320);
+    }
+  }
+  // rudder pedals with toe brakes, pilot and copilot pairs
+  for (const px of [380, 520, 1080, 1220]) {
+    ctx.fillStyle = '#0d0d0e'; ctx.fillRect(px - 6, fy, 12, 70);
+    ctx.save(); ctx.translate(px, fy + 92);
+    ctx.fillStyle = '#1d1d20'; rr(ctx, -32, -34, 64, 76, 10); ctx.fill();
+    ctx.fillStyle = '#2b2b2f'; rr(ctx, -28, -46, 56, 20, 6); ctx.fill();        // toe brake
+    ctx.strokeStyle = '#3c3c42'; ctx.lineWidth = 3;
+    for (let k = -2; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(-24, k * 10); ctx.lineTo(24, k * 10); ctx.stroke(); }
+    ctx.restore();
+  }
+  // center console between the seats: the trim wheel beside the fuel selector
+  g = ctx.createLinearGradient(780, 0, 980, 0);
+  g.addColorStop(0, '#141416'); g.addColorStop(0.5, '#26262a'); g.addColorStop(1, '#141416');
+  ctx.fillStyle = g; rr(ctx, 790, fy, 180, Math.max(90, B - fy + 40), 14); ctx.fill();
+  ctx.fillStyle = '#060607'; rr(ctx, 798, fy + 18, 22, 70, 6); ctx.fill();
+  ctx.fillStyle = '#2f3034'; ctx.beginPath(); ctx.ellipse(809, fy + 53 + Math.sin(t * 0.3) * 2, 9, 30, 0, 0, TAU); ctx.fill();
+  ctx.strokeStyle = '#4a4c52'; ctx.lineWidth = 2;
+  for (let k = -3; k <= 3; k++) { ctx.beginPath(); ctx.moveTo(802, fy + 53 + k * 7); ctx.lineTo(816, fy + 53 + k * 7); ctx.stroke(); }
+  txt(ctx, 'TRIM', 809, fy + 10, 10, '#cfcfcf', 'center', 800);
+  // lower edge of the panel
+  ctx.fillStyle = '#0a0a0b'; rr(ctx, 14, fy - 8, VW - 28, 18, 8); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(30, fy - 7, VW - 60, 2);
+  // the pilot's knees in the character's trousers
+  if (B > fy + 120) {
+    const [pant, skin] = PANTS[p.char] || PANTS.ivy;
+    for (const kx of [335, 565]) {
+      const ky = fy + 125;
+      const kg = ctx.createLinearGradient(kx - 80, 0, kx + 80, 0);
+      kg.addColorStop(0, shadeHex(pant, 0.7)); kg.addColorStop(0.45, shadeHex(pant, 1.2)); kg.addColorStop(1, shadeHex(pant, 0.65));
+      ctx.fillStyle = kg;
+      ctx.beginPath(); ctx.moveTo(kx - 92, B + 20); ctx.lineTo(kx - 78, ky + 40);
+      ctx.quadraticCurveTo(kx, ky - 40, kx + 78, ky + 40); ctx.lineTo(kx + 92, B + 20); ctx.closePath(); ctx.fill();
+      if (skin) {   // shorts: bare knees
+        ctx.fillStyle = skin; ctx.beginPath(); ctx.ellipse(kx, ky + 22, 60, 44, 0, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = pant; ctx.fillRect(kx - 84, ky + 50, 168, 16);
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;   // a crease
+      ctx.beginPath(); ctx.moveTo(kx - 20, ky + 60); ctx.quadraticCurveTo(kx - 6, ky + 120, kx - 24, B); ctx.stroke();
+    }
+    if (kneeboard) {   // a clipboard strapped to the right thigh
+      ctx.fillStyle = '#5a3b22'; rr(ctx, 452, fy + 160, 250, Math.min(330, B - fy - 150), 10); ctx.fill();
+      ctx.fillStyle = '#b8bcc4'; rr(ctx, 540, fy + 150, 76, 26, 5); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(452, fy + 300, 250, 12);   // the strap
+    }
+  }
+  // door panels and armrests on either side, when the screen is wide enough to show them
+  for (const side of [-1, 1]) {
+    const x0 = side < 0 ? L : VW - 14, x1 = side < 0 ? 14 : R;
+    if (x1 - x0 < 8) continue;
+    g = ctx.createLinearGradient(x0, 0, x1, 0);
+    g.addColorStop(side < 0 ? 0 : 1, '#7f6d44'); g.addColorStop(side < 0 ? 1 : 0, '#b29c66');
+    ctx.fillStyle = g; ctx.fillRect(x0, 430, x1 - x0, B - 430);
+    const w = x1 - x0, cx = side < 0 ? x1 - w * 0.5 : x0 + w * 0.5;
+    ctx.fillStyle = '#4b3a24'; rr(ctx, Math.min(x0, x1) + w * 0.12, 760, w * 0.76, 34, 10); ctx.fill();      // armrest
+    ctx.fillStyle = '#3d301e'; rr(ctx, Math.min(x0, x1) + w * 0.15, 860, w * 0.7, 120, 8); ctx.fill();     // map pocket
+    ctx.fillStyle = '#d9dce2'; rr(ctx, cx - 30, 690, 60, 12, 6); ctx.fill();                                // chrome handle
+    circle(ctx, cx, 500, 18, '#1c1c1e'); circle(ctx, cx, 500, 10, '#3a3b40');                               // air vent
+  }
+}
+function shadeHex(hex, k) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = [n >> 16, (n >> 8) & 255, n & 255].map(v => Math.max(0, Math.min(255, Math.round(v * k))));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
 function panel(ctx, p, t, L, R, B, opt) {
-  // black panel, gold door trim, brown carpet
-  ctx.fillStyle = '#5a4128'; ctx.fillRect(L, 820, R - L, B - 820);
-  ctx.fillStyle = '#4a351f'; for (let x = Math.floor(L / 12) * 12; x < R; x += 12) ctx.fillRect(x, 820, 2, B - 820);
-  ctx.fillStyle = '#a89262'; ctx.fillRect(L, 440, Math.max(0, -L) + 20, 380); ctx.fillRect(VW - 20, 440, R - VW + 20, 380);
+  // the cabin, then the black panel
+  const kneeboard = B > 1240 && !opt.mini;
+  interior(ctx, p, t, L, R, B, kneeboard);
   ctx.fillStyle = '#141416'; rr(ctx, 14, 438, VW - 28, 386, 26); ctx.fill();
+  // scuffs and scratches on the old panel paint
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+  for (let k = 0; k < 14; k++) { const x = 40 + (k * 211) % 1500, y = 450 + (k * 97) % 360; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 18 + (k % 4) * 9, y + 4 - (k % 3) * 3); ctx.stroke(); }
   // glareshield
   ctx.fillStyle = '#0d0d0f';
   ctx.beginPath(); ctx.moveTo(L, 412); ctx.quadraticCurveTo(800, 384, R, 412); ctx.lineTo(R, 466); ctx.quadraticCurveTo(800, 446, L, 466); ctx.closePath(); ctx.fill();
@@ -571,33 +546,25 @@ function panel(ctx, p, t, L, R, B, opt) {
   if (p.stall) circle(ctx, 252, 494, 18, 'rgba(255,40,40,0.35)');
   txt(ctx, 'STALL', 252, 470, 9, '#ddd', 'center', 800);
 
-  const pitch = p.airborne ? Math.min(1, (t - p.finishT) * 0.8) * 0.22 : p.rotT * 0.1;
-  asi(ctx, 330, 530, 54, p.speed);
-  attitude(ctx, 450, 530, 54, pitch);
-  altimeter(ctx, 570, 530, 54, p.alt * 900);
-  turnCoord(ctx, 330, 655, 54);
-  heading(ctx, 450, 655, 54, 90);
-  vsi(ctx, 570, 655, 54, p.airborne ? 700 : 0);
-  tach(ctx, 702, 660, 50, p.rpm);
-
-  // engine cluster: fuel L/R, oil temp, oil pressure (tap it to check oil)
-  ctx.fillStyle = '#0b0b0c'; rr(ctx, 640, 468, 124, 118, 10); ctx.fill();
-  miniGauge(ctx, 672, 502, 'FUEL L', 0.12, null, [0, 0.1]);
-  miniGauge(ctx, 733, 502, 'FUEL R', 0.2, null, [0, 0.1]);
-  miniGauge(ctx, 672, 560, 'OIL T', p.oilT, [0.4, 0.85], null);
-  miniGauge(ctx, 733, 560, 'OIL P', p.oil, [0.6, 0.95], [0, 0.1]);
+  // the six-pack, tachometer and engine gauges (instruments.js)
+  G.Instruments.draw(ctx, p, t, p.planeType || 'c172');
 
   // radio stack, lit when the master is on
   ctx.fillStyle = '#0e0f11'; rr(ctx, 800, 468, 292, 158, 8); ctx.fill();
   const lit = p.master, dig = lit ? '#4dff7a' : '#173a20', red = lit ? '#ff5a3c' : '#3a1a14';
   ctx.fillStyle = '#1c1d21'; rr(ctx, 810, 476, 272, 30, 4); ctx.fill();
   for (let i = 0; i < 9; i++) circle(ctx, 828 + i * 30, 491, 7, lit && i === 2 ? '#7ad1ff' : '#3a3b40');
+  // COM/NAV radio, then the transponder squawking 1200 with its reply light
   ctx.fillStyle = '#050505'; rr(ctx, 810, 512, 272, 40, 4); ctx.fill();
-  txt(ctx, '122.80  121.50', 946, 533, 22, red, 'center', 700, true);
+  txt(ctx, 'COM', 830, 524, 9, lit ? '#c9c9c9' : '#333', 'center', 700);
+  txt(ctx, '122.800', 892, 535, 20, red, 'center', 700, true);
+  txt(ctx, '121.500', 1030, 535, 20, red, 'center', 700, true);
+  txt(ctx, 'STBY', 974, 524, 9, lit ? '#c9c9c9' : '#333', 'center', 700);
   ctx.fillStyle = '#050505'; rr(ctx, 810, 558, 272, 28, 4); ctx.fill();
-  txt(ctx, 'NAV 110.50  113.90', 946, 572, 16, dig, 'center', 700, true);
+  txt(ctx, 'NAV  110.50   113.90', 946, 572, 16, dig, 'center', 700, true);
   ctx.fillStyle = '#050505'; rr(ctx, 810, 592, 272, 28, 4); ctx.fill();
-  txt(ctx, 'XPDR 7700  ALT', 946, 606, 16, dig, 'center', 700, true);
+  txt(ctx, 'XPDR  1200   ALT', 930, 606, 16, dig, 'center', 700, true);
+  circle(ctx, 1062, 606, 4, lit && (t * 1.3) % 1 < 0.15 ? '#ffd23a' : '#2a2412');
 
   // switch row (only the beacon matters for the checklist)
   const sw = [['BCN', 840, p.beacon], ['LAND', 892, false], ['TAXI', 944, false], ['NAV', 996, false], ['STROBE', 1048, false]];
@@ -611,8 +578,33 @@ function panel(ctx, p, t, L, R, B, opt) {
   pushPull(ctx, 1010, 752, p.mixture ? 0 : 1, 'mixture', 'MIXTURE');
   fuelSelector(ctx, 880, 862, p.fuel);
   flapLever(ctx, p);
-  checklistCard(ctx, p, opt.compact, opt.cardHighlight !== false);
+  if (kneeboard) {
+    ctx.save(); ctx.translate(462, 990); ctx.rotate(-0.025); ctx.scale(0.84, 0.84); ctx.translate(-1108, -462);
+    checklistCard(ctx, p, false, opt.cardHighlight !== false);
+    ctx.restore();
+    // a clock and placards where the card used to be
+    circle(ctx, 1200, 540, 44, '#0b0b0c'); circle(ctx, 1200, 540, 38, '#141517');
+    for (let k = 0; k < 12; k++) { const a = k * TAU / 12; ctx.fillStyle = '#ddd'; ctx.fillRect(1200 + Math.cos(a) * 32 - 1.5, 540 + Math.sin(a) * 32 - 1.5, 3, 3); }
+    const hh = (17 + t / 3600) % 12, mm = (52 + t / 60) % 60;
+    ctx.strokeStyle = '#eee'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(1200, 540); ctx.lineTo(1200 + Math.cos(hh / 12 * TAU - Math.PI / 2) * 20, 540 + Math.sin(hh / 12 * TAU - Math.PI / 2) * 20); ctx.stroke();
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(1200, 540); ctx.lineTo(1200 + Math.cos(mm / 60 * TAU - Math.PI / 2) * 30, 540 + Math.sin(mm / 60 * TAU - Math.PI / 2) * 30); ctx.stroke();
+    ctx.fillStyle = '#d8d1bd'; rr(ctx, 1120, 620, 240, 54, 4); ctx.fill();
+    txt(ctx, 'THIS AIRPLANE MUST BE OPERATED', 1240, 638, 10, '#222', 'center', 800);
+    txt(ctx, 'IN THE NORMAL CATEGORY', 1240, 656, 10, '#222', 'center', 800);
+    ctx.fillStyle = '#111'; rr(ctx, 1290, 500, 60, 30, 4); ctx.fill(); txt(ctx, 'ELT', 1320, 515, 11, '#e8e8e8', 'center', 800);
+  } else checklistCard(ctx, p, opt.compact, opt.cardHighlight !== false);
   yoke(ctx, p.pull);
+
+  const glow = ctx.createRadialGradient(800, 400, 60, 800, 400, 900);
+  glow.addColorStop(0, 'rgba(255,165,95,0.12)'); glow.addColorStop(1, 'rgba(255,165,95,0)');
+  ctx.fillStyle = glow; ctx.fillRect(L, 430, R - L, B - 430);
+  const vig = ctx.createLinearGradient(0, 760, 0, B);
+  vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vig; ctx.fillRect(L, 760, R - L, B - 760);
+  // sun visor folded up above the pilot
+  ctx.fillStyle = '#c9c0ab'; ctx.beginPath(); ctx.moveTo(230, 150); ctx.lineTo(560, 150); ctx.lineTo(548, 178); ctx.lineTo(244, 182); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.strokeRect(250, 156, 290, 18); ctx.setLineDash([]);
 
   // hint: after a few seconds stuck, the control you need glows
   if (opt.own && !p.done && opt.racing && t - p.stepSince >= (opt.hintAfter ?? 5) && t >= p.lockUntil) {
@@ -659,7 +651,8 @@ G.drawZombie = drawZombie;
 G.drawCockpit = (ctx, p, cw, ch, t, opt) => {
   // the "camera" crops off the sky and roof so the panel fills most of the screen
   const C = G.CAMERA, s = Math.min(cw / C.w, ch / C.h);
-  const ox = (cw - C.w * s) / 2 - C.x * s, oy = (ch - C.h * s) / 2 - C.y * s;
+  const slack = ch - C.h * s;
+  const ox = (cw - C.w * s) / 2 - C.x * s, oy = (slack > 0 ? 0 : slack / 2) - C.y * s;
   p.view = { s, ox, oy };
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, 0, cw, ch);

@@ -104,6 +104,7 @@ Then visit http://localhost:8765 in your browser.
 ## How it's built (all free)
 - Plain HTML, CSS and JavaScript, with no build step and no accounts.
 - `intro.js` paints the island at dusk (sky, volcano, palms, fog, fireflies, film grain). The title, the story and the view out of the cockpit all share it.
+- `instruments.js` draws the six-pack, tachometer and engine gauges (fuel, oil, amps, suction) like real round gauges, with damped needles and gyros that spin up after the engine starts. Their faces are drawn once and reused, so phones stay smooth.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
 - `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
 - `planes.js` draws the parked planes from above at real size (Cessna 172 and 150, Piper Cherokee, Piper Cub, Beechcraft Baron), with shadows, nav lights, stripes, chocks, tie-downs and fuel cans.

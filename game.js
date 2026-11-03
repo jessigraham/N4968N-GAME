@@ -347,7 +347,7 @@ function visuals(p, dt) {
 }
 
 // ---------- Online: share a snapshot of my cockpit ~10 times a second ----------
-const SNAP = ['step', 'master', 'fuel', 'mixture', 'throttle', 'strokes', 'beacon', 'cleared', 'running', 'cranking',
+const SNAP = ['planeType', 'char', 'step', 'master', 'fuel', 'mixture', 'throttle', 'strokes', 'beacon', 'cleared', 'running', 'cranking',
   'oil', 'oilT', 'oilChecked', 'flaps', 'rpm', 'speed', 'airborne', 'overrun', 'done', 'finishT', 'mistakes',
   'stall', 'rotT', 'pull', 'warm', 'skipped', 'prints', 'msg', 'msgColor', 'primeAnim'];
 function sendSnapshot() {
@@ -642,7 +642,7 @@ function beginRace(o = {}) {
   }
   $('#arena').className = opp ? 'duo' : 'solo';
   $('#oppWrap').classList.toggle('hidden', !opp);
-  if (o.plane) me.reg = o.plane.reg;
+  if (o.plane) { me.reg = o.plane.reg; me.planeType = o.plane.kind === 'cherokee' ? 'cherokee' : 'c172'; }
   if (opp) {
     opp.char = oppChar || 'kip';
     if (oppPlane) opp.reg = PLANES[oppPlane] || opp.reg;
