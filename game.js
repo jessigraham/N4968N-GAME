@@ -15,18 +15,26 @@ const MODES = G.MODES = {
     jungleClock: 300, cockpitClock: 120, penalty: 2, hintAfter: 0, cardHighlight: true,
     swarms: 5, swarmFever: 6, zombies: 6, zombieSpeed: 0.75, startAwake: 0.4, wave: 3, pour: 8,
     smokeAfter: 20, signs: true, radio: 1.4,
+    // fighting back: seconds to react to a lunge, seconds between attacks, chance two lunge together
+    counterWindow: 0.8, counterCooldown: 1, pairLunge: 0,
+    // health: lost per bite, lost per second while the fever is 80%+, fever after respawning
+    bite: 25, feverDrain: 1.5, respawnFever: 30,
   },
   medium: {
     name: 'Crosswind', tag: 'They’re closer than you think.', color: '#f5aa4a',
     jungleClock: 210, cockpitClock: 90, penalty: 3, hintAfter: 5, cardHighlight: true,
     swarms: 9, swarmFever: 9, zombies: 11, zombieSpeed: 1, startAwake: 0.6, wave: 5, pour: 12,
     smokeAfter: 45, signs: true, radio: 1,
+    counterWindow: 0.5, counterCooldown: 1.5, pairLunge: 0,
+    bite: 34, feverDrain: 2.5, respawnFever: 30,
   },
   hard: {
     name: 'Mayday', tag: 'Patient zero is already at the airstrip.', color: '#ff5a4f',
     jungleClock: 135, cockpitClock: 60, penalty: 5, hintAfter: Infinity, cardHighlight: false,
     swarms: 15, swarmFever: 12, zombies: 15, zombieSpeed: 1.35, startAwake: 1, wave: 7, pour: 16,
     smokeAfter: 90, signs: false, radio: 0.45,
+    counterWindow: 0.3, counterCooldown: 2, pairLunge: 0.35,
+    bite: 50, feverDrain: 4, respawnFever: 30,
   },
 };
 let modeKey = 'medium';
@@ -85,10 +93,14 @@ let lastSend = 0;
 
 // The four researchers you can play (all fictional). `path` picks the story path, `voice` the recorded lines.
 const CHARS = G.CHARS = {
-  ivy: { name: 'Dr. Ivy Thorne', short: 'Ivy', path: 'botanist', label: 'Botanist', voice: 'female' },
-  wren: { name: 'Wren “Riptide” Calloway', short: 'Wren', path: 'safari', label: 'Jungle Explorer', voice: 'female' },
-  elias: { name: 'Dr. Elias Fernsby', short: 'Elias', path: 'botanist', label: 'Botanist', voice: 'male' },
-  kip: { name: 'Kip “Compass” Monroe', short: 'Kip', path: 'safari', label: 'Jungle Explorer', voice: 'male' },
+  ivy: { name: 'Dr. Ivy Thorne', short: 'Ivy', path: 'botanist', label: 'Botanist', voice: 'female',
+    weapon: 'Vine Whip', icon: '🌿', weaponLine: 'A living strangler-fig vine that cracks out and snaps zombies back. Sometimes it grabs a tree and slingshots her forward.' },
+  wren: { name: 'Wren “Riptide” Calloway', short: 'Wren', path: 'safari', label: 'Jungle Explorer', voice: 'female',
+    weapon: 'Machete “Mildred”', icon: '🔪', weaponLine: 'A wide, flashing slash that sends them stumbling back.' },
+  elias: { name: 'Dr. Elias Fernsby', short: 'Elias', path: 'botanist', label: 'Botanist', voice: 'male',
+    weapon: 'The Fern', icon: '🪴', weaponLine: 'He swings his potted fern by the pot like a club. The fern is always fine. He always apologizes.' },
+  kip: { name: 'Kip “Compass” Monroe', short: 'Kip', path: 'safari', label: 'Jungle Explorer', voice: 'male',
+    weapon: 'Camera Flash', icon: '📸', weaponLine: 'A blinding flash that freezes zombies in place for a couple of seconds.' },
 };
 const charName = c => (CHARS[c] || CHARS.ivy).name;
 let myChar = 'ivy';
@@ -376,6 +388,7 @@ Net.onMsg = m => {
   else if (m.t === 'again') { wantAgain.them = true; $('#resStatus').textContent = 'Your rival wants a rematch!'; maybeRematch(); }
   else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
+  else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') {
     rivalBoardedAt = performance.now(); oppPlane = m.plane;
@@ -443,6 +456,7 @@ function startJungle(seed) {
   G.Jungle.start({
     seed, char: myChar, mode: M(),
     onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
+    onBitten: mode === 'online' ? () => Net.send({ t: 'bitten' }) : null,
     onBoard: plane => {
       if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id });
       // if your rival got there first, their race clock is already running

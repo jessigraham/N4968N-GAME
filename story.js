@@ -80,7 +80,7 @@ const cards = $('#selectCards');
 for (const [id, c] of Object.entries(G.CHARS)) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'pcard'; b.dataset.char = id;
-  b.innerHTML = `<img src="assets/characters/${id}.png" alt=""><span class="role">${c.label}</span><b>${c.name}</b><small>${BIOS[id].teaser}</small>`;
+  b.innerHTML = `<img src="assets/characters/${id}.png" alt=""><span class="role">${c.label}</span><b>${c.name}</b><small>${BIOS[id].teaser}</small><span class="weapon">${c.icon} Weapon: ${c.weapon}</span>`;
   b.addEventListener('click', () => toBackstory(id));
   cards.appendChild(b);
 }
@@ -94,6 +94,7 @@ function toBackstory(id) {
   $('#bsName').textContent = c.name;
   $('#bsStory').textContent = bio.story;
   $('#bsLine').textContent = '“' + bio.line + '”';
+  $('#bsWeapon').innerHTML = `<b>${c.icon} ${c.weapon}.</b> ${c.weaponLine}`;
   show('backstory');
   G.Sfx.init();
   G.Sfx.playFile(`assets/voice/${id}-intro.mp3`);

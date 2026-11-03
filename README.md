@@ -38,9 +38,26 @@ In the jungle, zombies trickle in, come in waves at half time and at 80%, and po
 
 ### Running through the jungle
 
-- **Computer:** arrow keys or WASD to run, **Shift** to sprint (watch the stamina bar), **Space** or **Enter** to climb into a plane.
-- **Phone:** the thumb joystick bottom-left, the **Sprint** button bottom-right, and **Climb in** when you reach a plane.
+- **Computer:** arrow keys or WASD to run, **Shift** to sprint (watch the stamina bar), **Space** to fight back, **Space** or **Enter** to climb into a plane.
+- **Phone:** the thumb joystick bottom-left, the weapon and **Sprint** buttons bottom-right, and **Climb in** when you reach a plane.
 - **Online:** you both run the same jungle and see each other as a faded "RIVAL". Whoever climbs into a plane first gets a head start: the horde starts closing in on the airstrip for both of you.
+
+### Fighting back and staying alive
+
+Each researcher has a weapon:
+
+- **Dr. Ivy Thorne, Vine Whip:** a strangler-fig vine that snaps zombies back. Now and then it grabs a tree and slingshots her forward.
+- **Wren "Riptide" Calloway, Machete "Mildred":** a wide slash that sends them stumbling.
+- **Dr. Elias Fernsby, The Fern:** swung by the pot like a club. The fern is always fine, and he always apologizes.
+- **Kip "Compass" Monroe, Camera Flash:** a blinding flash that freezes zombies for two seconds.
+
+When a zombie is about to lunge, it crouches under a red **!**. Press **Space** (or the weapon button on a phone) in time to counter. The weapon then needs a moment to recharge, shown by the ring around its icon. If you miss, you're bitten and lose health; high fever also drains health slowly. Med kits restore health. At zero health you go down, then wake at the last **checkpoint lantern** you passed with full health. The clock keeps running, though. Online, your rival hears about it.
+
+| Mode | Time to react | Recharge | Bite |
+|---|---|---|---|
+| Clear Skies | 0.8 s | 1 s | −25 health |
+| Crosswind | 0.5 s | 1.5 s | −34 health |
+| Mayday | 0.3 s | 2 s | −50 health, and they sometimes lunge in pairs |
 
 ### Working the cockpit
 

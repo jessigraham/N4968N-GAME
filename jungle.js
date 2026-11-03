@@ -168,7 +168,8 @@ function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock
     p.rot = -Math.PI / 2 + (R() - 0.5) * 0.3;
   });
 
-  return { seed, grid, at, riverY, bridges, N, strip, stripKey, trees, buckets, bushes, signs, items, swarms, zombies, planes, routePts, start: { ...N.S } };
+  const checkpoints = [{ ...N.S, lit: true, camp: true }, ...['J1', 'J2', 'J3'].map(k => ({ x: N[k].x - 50, y: N[k].y - 50, lit: false }))];
+  return { checkpoints, seed, grid, at, riverY, bridges, N, strip, stripKey, trees, buckets, bushes, signs, items, swarms, zombies, planes, routePts, start: { ...N.S } };
 }
 
 // ---------- The run ----------
@@ -201,7 +202,7 @@ function update(dt) {
   if (joy.on) { ix = joy.x; iy = joy.y; }
   const mag = Math.hypot(ix, iy);
   if (mag > 1) { ix /= mag; iy /= mag; }
-  const moving = mag > 0.15 && t >= me.stunUntil && t >= me.outUntil;
+  const moving = mag > 0.15 && t >= me.stunUntil && t >= me.outUntil && t >= me.deadUntil;
 
   // sprinting uses stamina
   const wantSprint = (keys.ShiftLeft || keys.ShiftRight || sprintBtn) && moving;
@@ -217,6 +218,7 @@ function update(dt) {
   if (!blocked(me.x + vx * dt, me.y, 14)) me.x += vx * dt;
   if (!blocked(me.x, me.y + vy * dt, 14)) me.y += vy * dt;
   if (Math.abs(ix) > 0.1 && moving) me.face = ix < 0 ? -1 : 1;
+  if (moving) { me.dirx = ix; me.diry = iy; const m2 = Math.hypot(ix, iy) || 1; me.dirx /= m2; me.diry /= m2; }
   me.moving = moving; me.sprinting = sprinting;
   if (moving) {
     const before = Math.floor(me.step);
@@ -252,23 +254,47 @@ function update(dt) {
   }
   for (const z of world.zombies) {
     if (t < z.wake) continue;
+    // knocked back or stunned zombies don't move under their own power
+    z.x += (z.kx || 0) * dt; z.y += (z.ky || 0) * dt;
+    z.kx = (z.kx || 0) * Math.pow(0.03, dt); z.ky = (z.ky || 0) * Math.pow(0.03, dt);
+    if (t < (z.stunUntil || 0)) continue;
     const d = Math.hypot(z.x - me.x, z.y - me.y);
+    const alive = t >= me.deadUntil && t >= me.outUntil;
+    // the lunge: a red "!" and a crouch, then the bite unless you counter in time
+    if (z.windup) {
+      if (t >= z.windup) {
+        z.windup = 0; z.cool = t + 2.2;
+        if (d < 120 && alive && t >= me.stunUntil) bitten(z);
+      }
+      continue;
+    }
     let tx = z.tx, ty = z.ty, spd = 38 * cfg.zombieSpeed;
-    if ((d < 260 || (z.aggro && d < 1400)) && t >= me.outUntil) { tx = me.x; ty = me.y; spd = (z.aggro ? 120 : 95) * cfg.zombieSpeed; }
+    if ((d < 260 || (z.aggro && d < 1400)) && alive) { tx = me.x; ty = me.y; spd = (z.aggro ? 120 : 95) * cfg.zombieSpeed; }
     else if (Math.hypot(z.tx - z.x, z.ty - z.y) < 10) { z.tx = z.hx + (Math.random() - 0.5) * 300; z.ty = z.hy + (Math.random() - 0.5) * 300; }
+    if (d < 85 && alive && t > (z.cool || 0)) {
+      z.windup = t + cfg.counterWindow;
+      // on Mayday they sometimes come at you two at a time
+      if (Math.random() < cfg.pairLunge) {
+        const buddy = world.zombies.find(o => o !== z && !o.windup && t >= o.wake && Math.hypot(o.x - me.x, o.y - me.y) < 320);
+        if (buddy) { buddy.windup = t + cfg.counterWindow; buddy.x = me.x + (me.x - z.x) * 0.9; buddy.y = me.y + (me.y - z.y) * 0.9; }
+      }
+      continue;
+    }
     const dd = Math.hypot(tx - z.x, ty - z.y) || 1;
     const nx = z.x + (tx - z.x) / dd * spd * dt, ny = z.y + (ty - z.y) / dd * spd * dt;
     const tl = world.at(Math.floor(nx / CELL), Math.floor(ny / CELL));
     if (tl !== T.WATER && !blocked(nx, ny, 10)) { z.x = nx; z.y = ny; } else { z.tx = z.hx; z.ty = z.hy; }
     z.face = tx < z.x ? -1 : 1;
-    if (d < 34 && t > z.cool && t >= me.stunUntil) {
-      z.cool = t + 2.5;
-      const a = Math.atan2(me.y - z.y, me.x - z.x);
-      me.kx = Math.cos(a) * 520; me.ky = Math.sin(a) * 520; me.stunUntil = t + 0.9; me.hit = t;
-      say('A zombie lunged at you!', '#ff6b6b', 1.6);
-      G.Sfx.bang(); G.Sfx.groan(0.2);
-    }
   }
+
+  // health: high fever slowly eats it; at zero you go down and wake up at the last checkpoint
+  if (me.infection >= 80 && t >= me.deadUntil) hurt(cfg.feverDrain * dt, false);
+  if (me.respawnAt && t >= me.respawnAt) respawn();
+  // checkpoints: a lantern lights up as you pass
+  for (const c of world.checkpoints) {
+    if (!c.lit && Math.hypot(c.x - me.x, c.y - me.y) < 90) { c.lit = true; me.checkpoint = c; say('Checkpoint: the lantern is lit.', '#ffd970', 2); G.Sfx.click(); }
+  }
+  floats = floats.filter(f => (f.life -= dt) > 0);
 
   // pick things up
   for (const it of world.items) {
@@ -276,7 +302,7 @@ function update(dt) {
     it.got = true; G.Sfx.click();
     if (it.kind === 'map') { me.hasMap = true; say('A torn piece of map! The airstrip is somewhere in the circle.', '#ffd970', 3.5); }
     if (it.kind === 'spray') { me.infection = Math.max(0, me.infection - 30); me.sprayUntil = t + 20; say('Bug spray: mosquitoes keep away for a while', '#7bed9f'); }
-    if (it.kind === 'med') { me.infection = Math.max(0, me.infection - 50); say('Med kit: fever down', '#7bed9f'); }
+    if (it.kind === 'med') { me.infection = Math.max(0, me.infection - 50); me.health = Math.min(100, me.health + 50); say('Med kit: fever down, health up', '#7bed9f'); }
   }
 
   // clues: the radio at the strip gets louder as you get close; windsock and smoke above the trees
@@ -312,6 +338,88 @@ function update(dt) {
     me.lastSend = t;
     opts.onPos({ x: Math.round(me.x), y: Math.round(me.y), face: me.face, moving: me.moving });
   }
+}
+
+// ---------- Fighting back ----------
+const WEAPON = {
+  ivy: { reach: 140, cone: 1.2, knock: 620, stun: 1.0 },
+  wren: { reach: 105, cone: 1.5, knock: 520, stun: 1.2 },
+  elias: { reach: 90, cone: 1.3, knock: 560, stun: 1.0 },
+  kip: { reach: 230, cone: 0.8, knock: 0, stun: 2.0 },
+};
+const SORRY = ['Sorry! So sorry!', 'Pardon me!', 'Nothing personal!', 'Oh dear, my apologies!', 'Terribly sorry!'];
+let floats = [];
+function pop(x, y, text, color) { floats.push({ x, y, text, color, life: 1.2 }); }
+
+function attack() {
+  if (!running || t < me.attackReady || t < me.deadUntil || t < me.outUntil) return;
+  const w = WEAPON[opts.char] || WEAPON.ivy, cfg = opts.mode;
+  me.attackReady = t + cfg.counterCooldown;
+  me.attackAt = t;
+  const dir = Math.atan2(me.diry, me.dirx);
+  let hits = 0;
+  for (const z of world.zombies) {
+    if (t < z.wake) continue;
+    const d = Math.hypot(z.x - me.x, z.y - me.y);
+    if (d > w.reach) continue;
+    let da = Math.atan2(z.y - me.y, z.x - me.x) - dir;
+    da = Math.atan2(Math.sin(da), Math.cos(da));
+    if (Math.abs(da) > w.cone && d > 40) continue;
+    hits++;
+    const countered = !!z.windup;
+    z.windup = 0; z.cool = t + 1.5; z.stunUntil = t + w.stun;
+    if (w.knock) { const a = Math.atan2(z.y - me.y, z.x - me.x); z.kx = Math.cos(a) * w.knock; z.ky = Math.sin(a) * w.knock; }
+    pop(z.x, z.y - 80, countered ? 'COUNTERED!' : opts.char === 'kip' ? 'STUNNED' : 'WHACK!', countered ? '#7bed9f' : '#fff');
+  }
+  // sounds and character touches
+  const S = G.Sfx;
+  if (S.ctx) {
+    if (opts.char === 'kip') { S.burst(0, S.t, 0.03, 4000, 'highpass', 0.5); S.burst(0, S.t + 0.07, 0.03, 3000, 'highpass', 0.4); S.tone(0, S.t, 0.5, 2400, 'sine', 0.05, 5200); }
+    else if (opts.char === 'wren') { S.burst(0, S.t, 0.18, 3500, 'highpass', 0.4); S.tone(0, S.t + 0.05, 0.25, 2600, 'triangle', 0.08, 1800); }
+    else if (opts.char === 'ivy') { S.burst(0, S.t, 0.12, 1500, 'bandpass', 0.3); S.burst(0, S.t + 0.12, 0.04, 5000, 'highpass', 0.7); }
+    else { S.burst(0, S.t, 0.2, 900, 'bandpass', 0.3); if (hits) S.tone(0, S.t + 0.1, 0.15, 110, 'sine', 0.5, 70); }
+    if (t - (me.lastAttackVoice || -9) > 4) { me.lastAttackVoice = t; S.playFile(`assets/voice/${opts.char}-attack.mp3`); }
+  }
+  if (opts.char === 'kip') me.flashAt = t;
+  if (opts.char === 'elias' && hits) { pop(me.x, me.y - 110, '(fern ok)', '#9fd38a'); say(SORRY[Math.floor(Math.random() * SORRY.length)], '#9fd38a', 1.4); }
+  if (opts.char === 'ivy' && Math.random() < 1 / 8) {
+    me.kx = me.dirx * 760; me.ky = me.diry * 760;
+    say('The vine grabs a tree and slingshots you forward!', '#9fd38a', 2);
+  }
+}
+
+function bitten(z) {
+  const a = Math.atan2(me.y - z.y, me.x - z.x);
+  me.kx = Math.cos(a) * 520; me.ky = Math.sin(a) * 520; me.stunUntil = t + 0.7; me.hit = t;
+  G.Sfx.bang(); G.Sfx.groan(0.2);
+  hurt(opts.mode.bite, true);
+  if (me.health > 0) say(`Bitten! −${opts.mode.bite} health. Press Space to fight back!`, '#ff6b6b', 1.8);
+}
+
+function hurt(amount, loud) {
+  if (t < me.deadUntil) return;
+  me.health = Math.max(0, me.health - amount);
+  if (me.health > 0) return;
+  // down: a short death beat, then wake at the last checkpoint. The clock keeps running.
+  me.deadUntil = t + 2.6; me.respawnAt = t + 2.6;
+  say('You were bitten…', '#ff6b6b', 2.6);
+  const v = G.CHARS && G.CHARS[opts.char] ? G.CHARS[opts.char].voice : 'female';
+  G.Sfx.voice(v, 'whoa');
+  if (opts.onBitten) opts.onBitten();
+  void loud;
+}
+
+function respawn() {
+  me.respawnAt = 0;
+  const c = me.checkpoint || world.checkpoints[0];
+  me.x = c.x; me.y = c.y; me.kx = me.ky = 0;
+  me.health = 100; me.infection = opts.mode.respawnFever; me.stunUntil = 0;
+  // clear the zombies around the checkpoint so you don't wake up in a crowd
+  world.zombies = world.zombies.filter(z => z.aggro ? Math.hypot(z.x - c.x, z.y - c.y) > 700 : true);
+  for (const z of world.zombies) {
+    if (Math.hypot(z.x - c.x, z.y - c.y) < 600) { const a = Math.random() * TAU; z.x = c.x + Math.cos(a) * 900; z.y = c.y + Math.sin(a) * 900; if (blocked(z.x, z.y, 10)) { z.x = z.hx; z.y = z.hy; } z.windup = 0; }
+  }
+  say('You wake up at the lantern. Keep going!', '#ffd970', 2.5);
 }
 
 // zombies coming out of the trees somewhere off-screen around you
@@ -469,7 +577,18 @@ function draw() {
   const inView = (x, y, m) => x > camX - m && x < camX + W / zoom + m && y > camY - m && y < camY + H / zoom + m;
   for (const tr of world.trees) if (inView(tr.x, tr.y, 80)) stand.push({ y: tr.y, f: () => drawTree(tr) });
   for (const p of world.planes) if (inView(p.x, p.y, 140)) stand.push({ y: p.y, f: () => drawPlane(p) });
-  for (const z of world.zombies) if (t >= z.wake && inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => { ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, 1); G.drawZombie(ctx, 0, 0, 64, z, t, false, 0); ctx.restore(); } });
+  for (const z of world.zombies) if (t >= z.wake && inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => {
+    ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, z.windup ? 0.86 : 1);
+    G.drawZombie(ctx, 0, 0, 64, z, t, !!z.windup, 0); ctx.restore();
+    if (z.windup) {   // about to lunge: a red ring and a "!"
+      ctx.strokeStyle = 'rgba(255,60,60,0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(z.x, z.y, 26, 10, 0, 0, TAU); ctx.stroke();
+      ctx.fillStyle = '#ff3b3b'; ctx.font = '900 30px system-ui'; ctx.textAlign = 'center'; ctx.fillText('!', z.x, z.y - 74 + Math.sin(t * 30) * 2);
+    } else if (t < (z.stunUntil || 0)) {   // dazed
+      ctx.fillStyle = '#ffe066'; ctx.font = '700 14px system-ui'; ctx.textAlign = 'center';
+      for (let k = 0; k < 3; k++) { const a = t * 5 + k * TAU / 3; ctx.fillText('✶', z.x + Math.cos(a) * 16, z.y - 70 + Math.sin(a) * 5); }
+    }
+  } });
+  for (const c of world.checkpoints) if (inView(c.x, c.y, 80)) stand.push({ y: c.y, f: () => drawLantern(c) });
   if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('RIVAL', ghost.x, ghost.y - 86); } });
   stand.push({ y: me.y, f: () => drawCharacter(charImg(opts.char), me.x, me.y, me.face, me.moving, me.step, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
@@ -479,6 +598,12 @@ function draw() {
     if (!inView(p.x, p.y, 140)) continue;
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - 40, p.y - 112, 80, 20);
     ctx.fillStyle = p.flyable ? '#fff' : '#bbb'; ctx.fillText(p.reg, p.x, p.y - 97);
+  }
+
+  drawAttack();
+  for (const f of floats) {
+    ctx.globalAlpha = Math.min(1, f.life * 1.5); ctx.fillStyle = f.color; ctx.font = '800 16px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText(f.text, f.x, f.y - (1.2 - f.life) * 40); ctx.globalAlpha = 1;
   }
 
   // mosquito swarms
@@ -512,8 +637,57 @@ function draw() {
   G.Scene.overlay(ctx, W, H, 0);   // the same film grain as the title and cockpit
   canvas.style.filter = me.infection >= 60 ? `blur(${((me.infection - 60) / 40 * 2.2 + 0.6).toFixed(1)}px) saturate(0.7)` : '';
   if (t < me.outUntil) { ctx.fillStyle = `rgba(0,0,0,${0.85})`; ctx.fillRect(0, 0, W, H); }
+  if (t - me.flashAt < 0.35) { ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - (t - me.flashAt) / 0.35)})`; ctx.fillRect(0, 0, W, H); }
+  if (t < me.deadUntil) {
+    const k = 1 - (me.deadUntil - t) / 2.6;
+    canvas.style.filter = `grayscale(${Math.min(1, k * 2)})`;
+    ctx.fillStyle = `rgba(120,0,0,${0.35 + k * 0.4})`; ctx.fillRect(0, 0, W, H);
+  }
   edgeClue(camX, camY, zoom, s.cx, s.cy, smokeShown || me.hasMap, 'smoke');
   hud();
+}
+
+function drawLantern(c) {
+  ctx.fillStyle = '#4b3520'; ctx.fillRect(c.x - 2, c.y - 44, 4, 46);
+  ctx.fillRect(c.x - 2, c.y - 44, 14, 3);
+  if (c.lit) {
+    const g = ctx.createRadialGradient(c.x + 11, c.y - 34, 0, c.x + 11, c.y - 34, 70);
+    g.addColorStop(0, `rgba(255,200,110,${0.45 + 0.08 * Math.sin(t * 12)})`); g.addColorStop(1, 'rgba(255,200,110,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x + 11, c.y - 34, 70, 0, TAU); ctx.fill();
+  }
+  ctx.fillStyle = c.lit ? '#ffd27d' : '#555'; ctx.fillRect(c.x + 6, c.y - 40, 10, 13);
+}
+
+// the weapon in action for a moment after you attack
+function drawAttack() {
+  const k = (t - me.attackAt) / 0.3;
+  if (k < 0 || k > 1) return;
+  const dir = Math.atan2(me.diry, me.dirx), x = me.x, y = me.y - 34;
+  ctx.save(); ctx.lineCap = 'round';
+  if (opts.char === 'ivy') {          // vine whip: a green lash cracking out
+    ctx.strokeStyle = `rgba(90,170,70,${1 - k})`; ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    const L = 140 * Math.min(1, k * 2.5);
+    ctx.quadraticCurveTo(x + Math.cos(dir + 0.8) * L * 0.6, y + Math.sin(dir + 0.8) * L * 0.6, x + Math.cos(dir) * L, y + Math.sin(dir) * L);
+    ctx.stroke();
+    ctx.fillStyle = '#7bc45a';
+    for (let i = 1; i < 5; i++) { const q = i / 5; ctx.beginPath(); ctx.ellipse(x + Math.cos(dir + 0.3) * L * q, y + Math.sin(dir + 0.3) * L * q, 7, 3, dir + i, 0, TAU); ctx.fill(); }
+  } else if (opts.char === 'wren') {  // machete: a wide silver arc with a glint
+    ctx.strokeStyle = `rgba(230,240,255,${1 - k})`; ctx.lineWidth = 10 * (1 - k) + 2;
+    ctx.beginPath(); ctx.arc(x, y, 80, dir - 1.4 + k * 1.2, dir + 0.2 + k * 1.2); ctx.stroke();
+    ctx.fillStyle = `rgba(255,255,255,${1 - k})`; ctx.font = '700 22px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('✦', x + Math.cos(dir) * 80, y + Math.sin(dir) * 80);
+  } else if (opts.char === 'elias') { // the fern: a swing with leaves flying
+    ctx.strokeStyle = `rgba(160,120,80,${1 - k})`; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(x, y, 60, dir - 1 + k * 2, dir - 0.6 + k * 2); ctx.stroke();
+    ctx.fillStyle = `rgba(110,190,90,${1 - k})`;
+    for (let i = 0; i < 8; i++) { const a = dir + (i - 4) * 0.3, r = 40 + k * 80 + i * 4; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * r, y + Math.sin(a) * r, 6, 3, a + k * 6, 0, TAU); ctx.fill(); }
+  } else {                            // camera flash: a white cone
+    const g = ctx.createRadialGradient(x, y, 0, x, y, 240);
+    g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - k)})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, 240, dir - 0.8, dir + 0.8); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawTree(tr) {
@@ -558,11 +732,24 @@ function bar(x, y, w, h, v, color, label) {
 
 function hud() {
   const u = dpr, pad = 14 * u;
-  bar(pad, pad, 180 * u, 16 * u, me.infection, me.infection >= 60 ? '#e74c3c' : '#c39a2b', `Fever ${Math.round(me.infection)}%`);
-  bar(pad, pad + 24 * u, 180 * u, 10 * u, me.stamina, '#5ec8e5', '');
+  bar(pad, pad, 180 * u, 16 * u, me.health, me.health <= 34 ? '#e74c3c' : '#2ecc71', `❤ Health ${Math.round(me.health)}%`);
+  bar(pad, pad + 24 * u, 180 * u, 16 * u, me.infection, me.infection >= 60 ? '#e74c3c' : '#c39a2b', `Fever ${Math.round(me.infection)}%`);
+  bar(pad, pad + 48 * u, 180 * u, 10 * u, me.stamina, '#5ec8e5', '');
   ctx.fillStyle = '#ddd'; ctx.font = `600 ${11 * u}px system-ui`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('Stamina (Shift to sprint)', pad + 186 * u, pad + 29 * u);
-  if (t < me.sprayUntil) ctx.fillText(`Bug spray ${Math.ceil(me.sprayUntil - t)}s`, pad + 186 * u, pad + 8 * u);
+  ctx.fillText('Stamina (Shift to sprint)', pad + 186 * u, pad + 53 * u);
+  if (t < me.sprayUntil) ctx.fillText(`Bug spray ${Math.ceil(me.sprayUntil - t)}s`, pad + 186 * u, pad + 32 * u);
+  // the weapon and its cooldown ring (bottom right on a computer; phones have the attack button)
+  const c = G.CHARS[opts.char], ready = clamp(1 - (me.attackReady - t) / opts.mode.counterCooldown, 0, 1);
+  const wx = W - 60 * u, wy = H - 60 * u, wr = 34 * u;
+  if (!matchMedia('(pointer: coarse)').matches) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, TAU); ctx.fill();
+    ctx.strokeStyle = ready >= 1 ? '#7bed9f' : '#ffd970'; ctx.lineWidth = 4 * u;
+    ctx.beginPath(); ctx.arc(wx, wy, wr, -Math.PI / 2, -Math.PI / 2 + ready * TAU); ctx.stroke();
+    ctx.font = `${26 * u}px system-ui`; ctx.textAlign = 'center'; ctx.fillText(c.icon, wx, wy + 2 * u);
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${11 * u}px system-ui`; ctx.fillText(`${c.weapon} · Space`, wx - 20 * u, wy - wr - 10 * u);
+  }
+  const ab = document.getElementById('jAttack');
+  ab.textContent = c.icon; ab.style.setProperty('--ready', ready);
   // the torn map: a little picture of the island with a circle where the strip is
   if (me.hasMap) {
     const mw = 150 * u, mh = mw * MH / MW, mx = W - mw - pad, my = pad + 36 * u;
@@ -616,7 +803,8 @@ const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'K
 window.addEventListener('keydown', e => {
   if (!running) return;
   if (MOVE_KEYS.has(e.code)) { keys[e.code] = true; e.preventDefault(); e.stopImmediatePropagation(); }
-  if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); board(); }
+  if (e.code === 'Enter' && !e.repeat) { e.preventDefault(); board(); }
+  if (e.code === 'Space' && !e.repeat) { e.preventDefault(); if (prompt && prompt.plane) board(); else attack(); }
 }, true);
 window.addEventListener('keyup', e => { if (MOVE_KEYS.has(e.code)) keys[e.code] = false; }, true);
 window.addEventListener('blur', () => { keys = {}; });
@@ -643,6 +831,7 @@ const sb = document.getElementById('jSprint');
 sb.addEventListener('pointerdown', e => { e.preventDefault(); sprintBtn = true; });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => sb.addEventListener(n, () => { sprintBtn = false; }));
 document.getElementById('jAct').addEventListener('click', board);
+document.getElementById('jAttack').addEventListener('pointerdown', e => { e.preventDefault(); attack(); });
 
 function showUI(on) {
   document.getElementById('jungle').classList.toggle('hidden', !on);
@@ -654,9 +843,10 @@ G.Jungle = {
   start(o) {
     opts = o;
     world = generate(o.seed, o.mode);
-    me = { x: world.start.x, y: world.start.y, face: 1, step: 0, moving: false, stamina: 100, infection: 0, kx: 0, ky: 0,
+    me = { x: world.start.x, y: world.start.y, face: 1, dirx: 1, diry: 0, health: 100, attackReady: 0, attackAt: -9, flashAt: -9, deadUntil: 0, respawnAt: 0, checkpoint: null,
+      step: 0, moving: false, stamina: 100, infection: 0, kx: 0, ky: 0,
       stunUntil: 0, outUntil: 0, sprayUntil: 0, hit: -9, hasMap: false, foundStrip: false };
-    ghost = null; taken = {}; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
+    ghost = null; taken = {}; floats = []; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
     showUI(true);
     ensureSounds();
     say('Find the hidden airstrip. Follow the trails, watch for signs.', '#ffd970', 4);
@@ -667,6 +857,7 @@ G.Jungle = {
   setGhost(g) { ghost = g; },
   markTaken(id) { taken[id] = true; },
   rivalArrived(secondsLeft) { deadline = t + secondsLeft; },
+  notice(text, color) { if (running) say(text, color || '#5ec8e5', 2.5); },
   elapsed() { return t; },
   get running() { return running; },
   // for testing: where things are
