@@ -674,6 +674,8 @@ function hud(ctx, p, t, opt) {
 }
 
 // Draw one complete cockpit into a canvas of size cw x ch (device pixels).
+G.drawZombie = drawZombie;
+
 G.drawCockpit = (ctx, p, cw, ch, t, opt) => {
   // the "camera" crops off the sky and roof so the panel fills most of the screen
   const C = G.CAMERA, s = Math.min(cw / C.w, ch / C.h);

@@ -11,7 +11,8 @@ The game opens on the title screen. From there:
 1. **The story:** what happened on Kanoa Island, one line at a time (you can skip it).
 2. **Who are you?** Choose Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). You'll see their backstory and hear their line.
 3. **Your path:** grab your things in the lab tent or at the river camp, then **run for the airstrip**.
-4. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
+4. **The jungle run.** Find the hidden airstrip (it moves every game). Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, walk up to a plane that can fly (the Cessna 172 N4968N or the Piper Cherokee N5512P) and climb in.
+5. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
 
 **On your own:** choose **Solo practice**.
 
@@ -22,6 +23,12 @@ The game opens on the title screen. From there:
 4. Once they've joined, you each go through the story and choose your own researcher. When both of you reach the airstrip, the race starts together. You see your cockpit large and theirs live in a small window in the corner, hands and all.
 
 On a phone, turn it sideways.
+
+### Running through the jungle
+
+- **Computer:** arrow keys or WASD to run, **Shift** to sprint (watch the stamina bar), **Space** or **Enter** to climb into a plane.
+- **Phone:** the thumb joystick bottom-left, the **Sprint** button bottom-right, and **Climb in** when you reach a plane.
+- **Online:** you both run the same jungle and see each other as a faded "RIVAL". Whoever climbs into a plane first gets a head start: the horde starts closing in on the airstrip for both of you.
 
 ### Working the cockpit
 
@@ -68,6 +75,7 @@ Then visit http://localhost:8765 in your browser.
 ## How it's built (all free)
 - Plain HTML, CSS and JavaScript, with no build step and no accounts.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
+- `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
 - `hands.js` animates the character's hand reaching for each control, using the hand pictures in `assets/characters/`.
 - `assets/voice/` holds the recorded character lines (a female and a male voice).
 - `sound.js` makes the engine, starter, stall horn, bangs and groans with the browser's built-in audio.

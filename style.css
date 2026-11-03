@@ -311,3 +311,26 @@ body {
   .bsText blockquote { font-size: 14px; margin: 6px 0; }
   .storyText { min-height: 5em; }
 }
+
+/* ---------- the jungle run ---------- */
+#jungle { position: fixed; inset: 0; top: 34px; z-index: 5; background: #0d1a10; touch-action: none; }
+#jungleCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#jJoy, #jSprint { display: none; }
+@media (pointer: coarse) {
+  #jJoy {
+    display: block; position: absolute; left: max(18px, env(safe-area-inset-left)); bottom: 18px; width: 130px; height: 130px;
+    border-radius: 50%; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.25); touch-action: none;
+  }
+  #jKnob { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,255,255,.35); }
+  #jSprint {
+    display: block; position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: 26px; width: 84px; height: 84px; border-radius: 50%;
+    background: rgba(94,200,229,.25); border: 2px solid rgba(94,200,229,.7); color: #fff; font-weight: 800; touch-action: none;
+  }
+}
+#jAct {
+  position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%);
+  padding: 14px 30px; border-radius: 12px; border: 0; cursor: pointer;
+  font-family: 'Bebas Neue', Impact, sans-serif; font-size: 28px; letter-spacing: .06em; color: #1d1206;
+  background: linear-gradient(#ffd27d, #e8933a); box-shadow: 0 6px 0 #8a4f17;
+}
+@media (pointer: fine) { #jAct { bottom: 12%; } }

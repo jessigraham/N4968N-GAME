@@ -313,7 +313,7 @@ const SNAP = ['step', 'master', 'fuel', 'mixture', 'throttle', 'strokes', 'beaco
   'stall', 'rotT', 'pull', 'warm', 'skipped', 'prints', 'msg', 'msgColor', 'primeAnim'];
 function sendSnapshot() {
   if (mode !== 'online' || !me) return;
-  const d = {};
+  const d = { reg: me.reg };
   for (const k of SNAP) d[k] = me[k];
   d.msgLeft = Math.max(0, me.msgDur - (raceT - me.msgT));
   d.lockLeft = Math.max(0, me.lockUntil - raceT);
@@ -331,6 +331,7 @@ function applySnapshot(d) {
   opp.lockUntil = raceT + d.lockLeft;
   opp.floodUntil = raceT + d.floodLeft;
   opp.shake = Math.max(opp.shake, d.shake || 0);
+  if (d.reg && d.reg !== opp.reg) { opp.reg = d.reg; $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg; }
   if (d.char && d.char !== opp.char) { opp.char = d.char; $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg; }
   // replay the rival's hand: only the action is sent, the motion is animated here
   if (d.hand) {
@@ -346,6 +347,13 @@ Net.onMsg = m => {
   if (m.t === 's') applySnapshot(m.d);
   else if (m.t === 'start') { if (Net.role === 'guest') beginRace(); }
   else if (m.t === 'again') { wantAgain.them = true; $('#resStatus').textContent = 'Your rival wants a rematch!'; maybeRematch(); }
+  else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
+  else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
+  else if (m.t === 'boarded') {
+    rivalBoardedAt = performance.now(); oppPlane = m.plane;
+    G.Jungle.markTaken(m.plane);
+    if (state === 'jungle') G.Jungle.rivalArrived(RACE_TIME + 3);
+  }
   else if (m.t === 'pick') { oppChar = m.char; updateRival(); }
   else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
@@ -367,7 +375,7 @@ function startStory() {
     if (mode === 'online') Net.send({ t: 'pick', char: pick });
   }, () => {
     if (mode === 'online' && !Net.connected()) mode = 'solo';   // rival left during the story
-    if (mode === 'solo') { beginRace(); return; }
+    if (mode === 'solo') { startJungle(Math.floor(Math.random() * 1e9)); return; }
     ready.me = true;
     Net.send({ t: 'ready', char: myChar });
     showScreen('airstrip');
@@ -385,8 +393,34 @@ function updateRival() {
 }
 function maybeStart() {
   if (Net.role === 'host' && ready.me && ready.them && Net.connected()) {
-    setTimeout(() => { Net.send({ t: 'start' }); beginRace(); }, 900);
+    const seed = Math.floor(Math.random() * 1e9);
+    setTimeout(() => { Net.send({ t: 'jungle', seed }); startJungle(seed); }, 900);
   }
+}
+
+// ---------- The jungle run: find the airstrip, then climb into a plane ----------
+let rivalBoardedAt = null, oppPlane = null;
+function startJungle(seed) {
+  rivalBoardedAt = null; oppPlane = null;
+  state = 'jungle';
+  $('#menu').classList.add('hidden');
+  G.Intro.stop(); Sfx.ambience(false); G.Story.stop();
+  $('#result').classList.add('hidden');
+  $('#quitBtn').classList.remove('hidden');
+  $('#timer .lbl').textContent = 'Find the airstrip';
+  document.body.classList.add('playing');
+  updateRival();
+  G.Jungle.start({
+    seed, char: myChar,
+    onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
+    onBoard: plane => {
+      if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id });
+      // if your rival got there first, their race clock is already running
+      const offset = rivalBoardedAt === null ? 0 : (performance.now() - rivalBoardedAt) / 1000 - 3;
+      beginRace({ plane, offset });
+    },
+    onLate: () => { G.Jungle.stop(); beginRace({ offset: RACE_TIME + 1 }); },
+  });
 }
 Net.onClose = () => {
   if (mode !== 'online') return;
@@ -529,8 +563,10 @@ function goFullscreen() {
   try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) {}
 }
 
-function beginRace() {
+const PLANES = { c172: 'N4968N', piper: 'N5512P' };
+function beginRace(o = {}) {
   Sfx.init();
+  G.Jungle.stop();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   const mySlot = mode === 'online' && Net.role === 'guest' ? 1 : 0;
   me = newPlayer(mySlot);
@@ -545,13 +581,23 @@ function beginRace() {
   }
   $('#arena').className = opp ? 'duo' : 'solo';
   $('#oppWrap').classList.toggle('hidden', !opp);
-  if (opp) { opp.char = oppChar || 'kip'; $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg; }
+  if (o.plane) me.reg = o.plane.reg;
+  if (opp) {
+    opp.char = oppChar || 'kip';
+    if (oppPlane) opp.reg = PLANES[oppPlane] || opp.reg;
+    $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg;
+  }
   $('#menu').classList.add('hidden');
   G.Intro.stop(); Sfx.ambience(false);
   $('#result').classList.add('hidden');
   $('#quitBtn').classList.remove('hidden');
   document.body.classList.add('playing');
   state = 'countdown'; countdown = 3; raceT = 0; endAt = 0; step.lastBeep = 4;
+  $('#timer .lbl').textContent = 'Zombies overrun the airstrip in';
+  if (o.offset > 0) {   // your rival reached the planes first: the horde is already on its way
+    state = 'race'; raceT = Math.min(RACE_TIME, o.offset);
+    say(me, `Your rival got here ${Math.round(o.offset + 3)}s ahead of you. Hurry!`, '#ff9f43', 3);
+  }
   G.Story.stop(); updateRival();
   fitAll();
 }
@@ -587,7 +633,8 @@ function toMenu() {
   Net.leave();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   me = newPlayer(0); opp = null;
-  G.Story.stop();
+  G.Story.stop(); G.Jungle.stop();
+  $('#timer .lbl').textContent = 'Zombies overrun the airstrip in';
   mode = 'solo'; state = 'menu';
   $('#arena').className = 'solo';
   $('#oppWrap').classList.add('hidden');
@@ -675,12 +722,12 @@ function frame(now) {
   let total = Math.min(1, (now - last) / 1000);
   last = now;
   while (total > 0) { const dt = Math.min(0.05, total); step(dt, now); total -= dt; }
-  if (mode === 'online' && state !== 'menu' && now - lastSend > 100) { lastSend = now; sendSnapshot(); }
+  if (mode === 'online' && ['countdown', 'race', 'end'].includes(state) && now - lastSend > 100) { lastSend = now; sendSnapshot(); }
   draw();
 }
 function draw() {
   const rem = RACE_TIME - raceT;
-  $('#time').textContent = fmt(state === 'menu' ? RACE_TIME : rem);
+  $('#time').textContent = state === 'jungle' ? fmt(G.Jungle.elapsed()) : fmt(state === 'menu' ? RACE_TIME : rem);
   $('#timer').classList.toggle('danger', state === 'race' && rem < 20);
   if (document.hidden) return;
   const racing = state === 'race';
@@ -692,7 +739,7 @@ function draw() {
   if (opp) {
     const oc = $('#oppCanvas');
     G.drawCockpit(oc.getContext('2d'), opp, oc.width, oc.height, raceT, { mini: true, compact: true, racing });
-    const st = opp.airborne ? 'airborne!' : opp.overrun ? 'overrun' : oppGone ? 'disconnected'
+    const st = opp.airborne ? 'airborne!' : opp.overrun ? 'overrun' : oppGone ? 'disconnected' : !oppPlane && opp.step === 0 && !opp.master ? 'still in the jungle'
       : opp.running ? 'engine running' : `step ${Math.min(opp.step + 1, STEPS.length)}/${STEPS.length}`;
     $('#oppStatus').textContent = '· ' + st;
   }
