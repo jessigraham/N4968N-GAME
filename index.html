@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>N4968N Cockpit Race</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Allerta+Stencil&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">N4968N <span>cockpit race</span></div>
+  <div id="timer"><span class="lbl">Zombies overrun the airstrip in</span> <b id="time">1:30</b></div>
+  <div class="tools">
+    <button id="muteBtn" type="button">Sound: on</button>
+    <button id="quitBtn" type="button" class="hidden">Quit</button>
+  </div>
+</header>
+
+<main id="arena" class="solo">
+  <div id="meWrap" class="view"><canvas id="meCanvas"></canvas></div>
+  <div id="oppWrap" class="view opp hidden">
+    <div class="oppTag">Rival: <b id="oppName"></b> <span id="oppStatus"></span></div>
+    <canvas id="oppCanvas"></canvas>
+  </div>
+</main>
+
+<div id="countdown" class="hidden"></div>
+<div id="rotate"><div>Turn your phone sideways<br><span>⟳</span></div></div>
+
+<div id="menu" class="overlay">
+  <canvas id="introBg"></canvas>
+  <button id="introSound" type="button" aria-label="Sound">🔈 Sound off</button>
+  <div class="card bare">
+    <!-- home: the title screen -->
+    <div class="screen" data-screen="home">
+      <div class="hero">
+        <h1 class="title"><span class="t1">Escape the Island</span><span class="tail">N4968N</span></h1>
+        <p class="tagline">The fever is spreading. The radio is dead.<br>One airstrip. One way out.</p>
+      </div>
+      <div class="plate">
+        <p class="pickLabel">Choose your researcher</p>
+        <div id="charPick">
+          <button type="button" data-char="ivy"><img src="assets/characters/ivy.png" alt="">Dr. Ivy<small>Botanist</small></button>
+          <button type="button" data-char="wren"><img src="assets/characters/wren.png" alt="">Wren<small>Jungle Explorer</small></button>
+          <button type="button" data-char="elias"><img src="assets/characters/elias.png" alt="">Dr. Elias<small>Botanist</small></button>
+          <button type="button" data-char="kip"><img src="assets/characters/kip.png" alt="">Kip<small>Jungle Explorer</small></button>
+        </div>
+        <button id="goInvite" type="button" class="hero-btn">Invite a player<small>Send a link to a friend's phone or computer</small></button>
+        <button id="goJoin" type="button" class="second-btn">Join with a code</button>
+        <div class="links">
+          <button id="goSolo" type="button" class="link">Solo practice</button>
+          <span>·</span>
+          <button id="goHow" type="button" class="link">How to play</button>
+        </div>
+      </div>
+    </div>
+    <!-- how to play -->
+    <div class="screen hidden" data-screen="how">
+      <h2>How to play</h2>
+      <ul class="rules">
+        <li>Race your rival to start your plane and take off before the zombies reach the airstrip (90 seconds).</li>
+        <li>Work the real controls: tap switches, drag the throttle knob in, hold the key, pull back on the yoke. On a computer you can also use the keys on the white tags.</li>
+        <li>Follow the checklist card <b>in order</b>. Out of order makes the engine sputter and costs 3 seconds.</li>
+        <li>Prime 2 or 3 times. Too much floods the engine and you have to wait.</li>
+        <li>Keep an eye on the fuel selector on the floor…</li>
+        <li>Stuck? After a few seconds the control you need starts to glow.</li>
+      </ul>
+      <button type="button" class="back">Back</button>
+    </div>
+    <!-- invite -->
+    <div class="screen hidden" data-screen="invite">
+      <h2>Invite a player</h2>
+      <p class="story">Send this link to your friend's phone or computer. They can also type the code.</p>
+      <div class="code" id="inviteCode">····</div>
+      <div class="linkbox"><input id="inviteLink" readonly></div>
+      <div class="row">
+        <button id="copyBtn" type="button">Copy link</button>
+        <button id="shareBtn" type="button" class="hidden">Share…</button>
+      </div>
+      <p class="status" id="inviteStatus"></p>
+      <button id="startOnline" type="button" class="big" disabled>Start the race</button>
+      <button type="button" class="back">Back</button>
+    </div>
+    <!-- join -->
+    <div class="screen hidden" data-screen="join">
+      <h2>Join a race</h2>
+      <p class="story">Type the 4-letter code from your friend's invite.</p>
+      <div class="row">
+        <input id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD">
+        <button id="joinBtn" type="button">Join</button>
+      </div>
+      <p class="status" id="joinStatus"></p>
+      <button type="button" class="back">Back</button>
+    </div>
+  </div>
+</div>
+
+<div id="result" class="overlay hidden">
+  <div class="card">
+    <h1 id="resTitle"></h1>
+    <p id="resSub" class="story"></p>
+    <ul id="resList" class="rules"></ul>
+    <p class="status" id="resStatus"></p>
+    <div class="modes">
+      <button id="again" type="button">Race again</button>
+      <button id="toMenu" type="button" class="alt">Main menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- PeerJS: free, open-source library for browser-to-browser connections (used only for online races) -->
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="sound.js"></script>
+<script src="cockpit.js"></script>
+<script src="hands.js"></script>
+<script src="intro.js"></script>
+<script src="net.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
