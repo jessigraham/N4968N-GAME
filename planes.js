@@ -138,6 +138,13 @@ function body(ctx, p, T, t) {
     ctx.scale(1 / K, 1 / K); ctx.fillStyle = 'rgba(25,25,30,0.85)'; ctx.font = `800 ${0.62 * K}px Arial, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.reg, 0, 0);
     ctx.restore();
+    // fuel caps on top of each wing; the Cherokee's dark non-slip walkway at the left wing root
+    const capX = (T.wing[0][0] + T.wing[T.wing.length - 1][0]) / 2;
+    for (const y of [-T.span * 0.42, T.span * 0.42]) {
+      ctx.fillStyle = '#9a9ca0'; ctx.beginPath(); ctx.arc(capX, y, 0.09, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 0.02; ctx.stroke();
+    }
+    if (p.kind === 'cherokee') { ctx.fillStyle = 'rgba(25,25,28,0.75)'; ctx.fillRect(T.wing[T.wing.length - 1][0] + 0.1, -1.25, T.wing[0][0] - T.wing[T.wing.length - 1][0] - 0.2, 0.6); }
     // nav lights: red on the left wingtip, green on the right
     for (const [y, c] of [[-T.span, '#ff3030'], [T.span, '#30ff70']]) {
       const g = ctx.createRadialGradient(0, y, 0, 0, y, 0.6);
@@ -240,6 +247,7 @@ G.Planes = {
     const lift = T.high ? 1.3 : 1;
     ctx.save(); ctx.translate(p.x + SHADOW[0] * sc * lift, p.y + SHADOW[1] * sc * lift); ctx.rotate(p.rot);
     if (p.flatTire) ctx.rotate(0.04);
+    ctx.filter = 'blur(5px)';   // a soft dusk shadow (browsers without canvas filters just get a sharp one)
     ctx.scale(sc, sc); silhouette(ctx, T, 'rgba(0,0,0,0.32)'); ctx.restore();
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(sc, sc);
     ground(ctx, p, T);
