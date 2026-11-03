@@ -343,7 +343,11 @@ function visuals(p, dt) {
   if (p.airborne) { p.alt += dt * 0.35; p.speed = Math.min(80, p.speed + dt * 3); }
   p.dist += p.speed * dt * 0.05;
   p.shake = Math.max(0, p.shake - dt);
-  if (p.voice) p.voice.update(p);
+  if (p.airborne && !p.upAt) p.upAt = performance.now();
+  if (p.voice) {
+    if (p.upAt) p.voice.level = (p === me ? 1 : 0.25) * Math.max(0, 1 - (performance.now() - p.upAt) / 6000);
+    p.voice.update(p);
+  }
 }
 
 // ---------- Online: share a snapshot of my cockpit ~10 times a second ----------
@@ -385,13 +389,13 @@ Net.onMsg = m => {
   if (!m || !m.t) return;
   if (m.t === 's') applySnapshot(m.d);
   else if (m.t === 'start') { if (Net.role === 'guest') beginRace(); }
-  else if (m.t === 'again') { wantAgain.them = true; $('#resStatus').textContent = 'Your rival wants a rematch!'; maybeRematch(); }
+  else if (m.t === 'again') { wantAgain.them = true; againMsg = 'Your rival wants a rematch!'; $('#resStatus').textContent = againMsg; maybeRematch(); }
   else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') {
-    rivalBoardedAt = performance.now(); oppPlane = m.plane;
+    rivalBoardedAt = performance.now(); oppPlane = m.plane; if (m.jungle) oppJungle = m.jungle;
     G.Jungle.markTaken(m.plane);
     if (state === 'jungle') G.Jungle.rivalArrived(RACE_TIME + 3);
   }
@@ -444,6 +448,9 @@ function maybeStart() {
 let rivalBoardedAt = null, oppPlane = null;
 function startJungle(seed) {
   rivalBoardedAt = null; oppPlane = null;
+  myJungle = { time: 0, deaths: 0 }; oppJungle = { time: 0, deaths: 0 };
+  wantAgain = { me: false, them: false }; againMsg = '';
+  hideEnding();
   state = 'jungle';
   $('#menu').classList.add('hidden');
   G.Intro.stop(); Sfx.ambience(false); G.Story.stop();
@@ -458,7 +465,8 @@ function startJungle(seed) {
     onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
     onBitten: mode === 'online' ? () => Net.send({ t: 'bitten' }) : null,
     onBoard: plane => {
-      if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id });
+      myJungle = G.Jungle.stats();
+      if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id, jungle: myJungle });
       // if your rival got there first, their race clock is already running
       const offset = rivalBoardedAt === null ? 0 : (performance.now() - rivalBoardedAt) / 1000 - 3;
       beginRace({ plane, offset });
@@ -488,7 +496,10 @@ Net.onStatus = (kind, text) => {
 function setStatus(sel, text, err) { const el = $(sel); el.textContent = text; el.classList.toggle('err', !!err); }
 
 function maybeRematch() {
-  if (Net.role === 'host' && wantAgain.me && wantAgain.them && Net.connected()) { Net.send({ t: 'start' }); beginRace(); }
+  if (Net.role === 'host' && wantAgain.me && wantAgain.them && Net.connected()) {
+    const seed = Math.floor(Math.random() * 1e9);
+    Net.send({ t: 'jungle', seed }); startJungle(seed);
+  }
 }
 
 // ---------- Input ----------
@@ -626,6 +637,7 @@ function goFullscreen() {
 const PLANES = { c172: 'N4968N', piper: 'N5512P' };
 function beginRace(o = {}) {
   Sfx.init();
+  hideEnding();
   RACE_TIME = G.RACE_TIME = M().cockpitClock;
   G.Jungle.stop();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
@@ -663,38 +675,91 @@ function beginRace(o = {}) {
   fitAll();
 }
 
-function finishRace() {
-  state = 'end';
-  const w = G.winner();
-  const title = $('#resTitle'), sub = $('#resSub'), list = $('#resList');
-  if (w) {
-    title.textContent = `${w.reg} is airborne!`;
-    sub.textContent = mode === 'solo'
-      ? `You got off the island with ${fmt(RACE_TIME - w.finishT)} to spare.`
-      : w === me ? 'You got off the island first. Your rival is left with the zombies…' : 'Your rival got off the island first.';
-  } else {
-    title.textContent = 'Overrun!';
-    sub.textContent = 'The zombies reached the airstrip before anyone got off the ground.';
+// ---------- The ending: fly-out over the island, then the winner card ----------
+const WIN_LINES = {
+  ivy: 'Cure’s in my pocket. Zombies in my rearview.',
+  wren: 'Eleven jungles. Never lost a guest. Not starting tonight.',
+  elias: 'Look, little guy. We’re flying!',
+  kip: 'Finally. A direction I’m sure of. Up.',
+};
+let againMsg = '';
+let endingShown = false, cardShown = false, playedWinFor = null, cardTimer = 0;
+let myJungle = { time: 0, deaths: 0 }, oppJungle = { time: 0, deaths: 0 };
+
+function startEnding() {
+  endingShown = true;
+  if (me.airborne) setTimeout(() => G.Ending.flyout(showCard), 1200);   // you escaped: watch the plane climb away
+  else setTimeout(showCard, 2200);                                       // left on the strip: the card over your cockpit
+}
+
+function showCard() {
+  cardShown = true;
+  fillCard();
+  $('#result').classList.remove('hidden');
+  clearInterval(cardTimer);
+  cardTimer = setInterval(() => { if (cardShown) fillCard(); }, 700);   // the rival may still be racing
+}
+
+function escapeLine(p, jungle) {
+  if (p.airborne) {
+    const total = jungle.time + p.finishT;
+    return `escaped in ${fmt(total)} (jungle ${fmt(jungle.time)}, cockpit ${p.finishT.toFixed(1)} s) · ${p.mistakes} mistake${p.mistakes === 1 ? '' : 's'} · ${jungle.deaths} li${jungle.deaths === 1 ? 'fe' : 'ves'} lost`;
   }
+  if (p === opp && oppGone) return 'left the race';
+  return p.overrun ? `left on the strip · ${jungle.deaths} li${jungle.deaths === 1 ? 'fe' : 'ves'} lost` : 'still on the strip…';
+}
+
+function fillCard() {
+  const w = G.winner(), m = M(), card = $('#result .card');
+  card.classList.toggle('loser', !!w && w !== me && !me.airborne);
+  card.classList.toggle('overrun', !w);
+  if (w) {
+    $('#winImg').src = `assets/characters/${w.char}.png`;
+    $('#winBadge').textContent = `ESCAPED KANOA · ${m.name.toUpperCase()}`;
+    $('#winBadge').style.color = m.color;
+    $('#resTitle').textContent = charName(w.char);
+    $('#winLine').textContent = '“' + WIN_LINES[w.char] + '”';
+    let sub;
+    if (w === me) {
+      sub = mode === 'solo' ? `You got ${me.reg} off the island with ${fmt(RACE_TIME - me.finishT)} to spare.`
+        : opp && opp.airborne ? `Your rival escaped too, ${(opp.finishT - me.finishT).toFixed(1)} s behind you.`
+        : opp && opp.overrun ? 'Your rival was left on the strip.' : 'Your rival is still on the strip…';
+    } else sub = me.airborne ? `You escaped too, ${(me.finishT - w.finishT).toFixed(1)} s behind.` : 'You were left on the strip.';
+    $('#resSub').textContent = sub;
+    if (playedWinFor !== w) { playedWinFor = w; Sfx.playFile(`assets/voice/${w.char}-win.mp3`); }
+  } else {
+    $('#winImg').src = `assets/characters/${me.char}.png`;
+    $('#winBadge').textContent = `LEFT ON KANOA · ${m.name.toUpperCase()}`;
+    $('#winBadge').style.color = '#ff6b6b';
+    $('#resTitle').textContent = 'Overrun';
+    $('#winLine').textContent = '“The horde reached the plane.”';
+    $('#resSub').textContent = opp && !opp.done ? 'You were left on the strip. Your rival is still trying…' : 'Nobody got off the island.';
+  }
+  const list = $('#resList');
   list.innerHTML = '';
-  for (const p of [me, opp]) {
+  for (const [p, jungle, who] of [[me, myJungle, 'You'], [opp, oppJungle, 'Rival']]) {
     if (!p) continue;
     const li = document.createElement('li');
-    const who = p === me ? 'You' : 'Rival';
-    const what = p.airborne ? `airborne in ${p.finishT.toFixed(1)} s` : p === opp && oppGone ? 'left the race' : 'overrun';
-    li.textContent = `${who} (${p.reg}): ${what} · ${p.mistakes} mistake${p.mistakes === 1 ? '' : 's'}`;
+    li.innerHTML = `<b>${who}</b> · ${charName(p.char)} in ${p.reg}: ${escapeLine(p, jungle)}`;
     list.appendChild(li);
   }
-  $('#resStatus').textContent = mode === 'online' && oppGone ? 'Your rival left the race.' : '';
+  $('#resStatus').textContent = mode === 'online' && oppGone ? 'Your rival left the race.' : againMsg;
   $('#again').disabled = mode === 'online' && oppGone;
-  $('#result').classList.remove('hidden');
+  $('#changeChar').classList.toggle('hidden', mode === 'online');
+}
+
+function hideEnding() {
+  cardShown = false; endingShown = false; playedWinFor = null;
+  clearInterval(cardTimer);
+  G.Ending.stop(); Sfx.stopFile();
+  $('#result').classList.add('hidden');
 }
 
 function toMenu() {
   Net.leave();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   me = newPlayer(0); opp = null;
-  G.Story.stop(); G.Jungle.stop();
+  G.Story.stop(); G.Jungle.stop(); hideEnding();
   $('#timer .lbl').textContent = 'Zombies overrun the airstrip in';
   mode = 'solo'; state = 'menu';
   $('#arena').className = 'solo';
@@ -732,10 +797,19 @@ $('#shareBtn').addEventListener('click', () => {
   navigator.share({ title: 'N4968N cockpit race', text: `Race me off the zombie island! Code ${Net.code}`, url: link }).catch(() => {});
 });
 $('#again').addEventListener('click', () => {
-  if (mode === 'solo') { beginRace(); return; }
+  if (mode === 'solo') { startJungle(Math.floor(Math.random() * 1e9)); return; }
   wantAgain.me = true; Net.send({ t: 'again' });
-  $('#resStatus').textContent = wantAgain.them ? 'Starting…' : 'Waiting for your rival to press Race again…';
+  againMsg = wantAgain.them ? 'Starting…' : 'Waiting for your rival to press Fly again…';
+  $('#resStatus').textContent = againMsg;
   maybeRematch();
+});
+$('#changeChar').addEventListener('click', () => {
+  hideEnding();
+  [me, opp].forEach(p => p && p.voice && p.voice.stop());
+  state = 'menu';
+  document.body.classList.remove('playing');
+  $('#quitBtn').classList.add('hidden');
+  G.Story.chooseAgain(pickChar, () => startJungle(Math.floor(Math.random() * 1e9)));
 });
 $('#toMenu').addEventListener('click', toMenu);
 $('#quitBtn').addEventListener('click', toMenu);
@@ -771,8 +845,8 @@ function step(dt, now) {
       }
       // an online rival who stopped sending past the deadline counts as overrun
       if (opp && !opp.done && raceT >= RACE_TIME && !Net.connected()) opp.done = true;
-    } else if (!endAt) endAt = now + 2500;
-    else if (now >= endAt) { endAt = 0; finishRace(); }
+    } else state = 'end';
+    if (me.done && !endingShown) startEnding();
   }
   if (me && (state === 'race' || state === 'end')) updateMe(me, dt);
   if (opp && (state === 'race' || state === 'end')) visuals(opp, dt);

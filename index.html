@@ -151,15 +151,22 @@
   </div>
 </div>
 
+<canvas id="flyout" class="hidden"></canvas>
 <div id="result" class="overlay hidden">
-  <div class="card">
-    <h1 id="resTitle"></h1>
-    <p id="resSub" class="story"></p>
-    <ul id="resList" class="rules"></ul>
-    <p class="status" id="resStatus"></p>
-    <div class="modes">
-      <button id="again" type="button">Race again</button>
-      <button id="toMenu" type="button" class="alt">Main menu</button>
+  <div class="card winCard">
+    <img id="winImg" alt="">
+    <div class="winText">
+      <p class="role" id="winBadge"></p>
+      <h1 id="resTitle"></h1>
+      <blockquote id="winLine"></blockquote>
+      <p id="resSub" class="story"></p>
+      <ul id="resList" class="stats"></ul>
+      <p class="status" id="resStatus"></p>
+      <div class="modes">
+        <button id="again" type="button">Fly again</button>
+        <button id="changeChar" type="button" class="alt">Change researcher</button>
+      </div>
+      <button id="toMenu" type="button" class="link">Main menu</button>
     </div>
   </div>
 </div>
@@ -176,5 +183,6 @@
 <script src="net.js"></script>
 <script src="game.js"></script>
 <script src="story.js"></script>
+<script src="ending.js"></script>
 </body>
 </html>

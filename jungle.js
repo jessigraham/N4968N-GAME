@@ -403,7 +403,7 @@ function hurt(amount, loud) {
   me.health = Math.max(0, me.health - amount);
   if (me.health > 0) return;
   // down: a short death beat, then wake at the last checkpoint. The clock keeps running.
-  me.deadUntil = t + 2.6; me.respawnAt = t + 2.6;
+  me.deadUntil = t + 2.6; me.respawnAt = t + 2.6; me.deaths = (me.deaths || 0) + 1;
   say('You were bitten…', '#ff6b6b', 2.6);
   const v = G.CHARS && G.CHARS[opts.char] ? G.CHARS[opts.char].voice : 'female';
   G.Sfx.voice(v, 'whoa');
@@ -848,6 +848,7 @@ G.Jungle = {
   rivalArrived(secondsLeft) { deadline = t + secondsLeft; },
   notice(text, color) { if (running) say(text, color || '#5ec8e5', 2.5); },
   elapsed() { return t; },
+  stats() { return { time: t, deaths: (me && me.deaths) || 0 }; },
   get running() { return running; },
   // for testing: where things are
   debug() { return { me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },

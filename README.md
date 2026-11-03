@@ -24,6 +24,17 @@ The game opens on the title screen. From there:
 
 On a phone, turn it sideways.
 
+### The escape
+
+When you lift off, the view pulls back over the island as your plane climbs past the volcano and the horde shrinks on the strip below. Then the winner's card slides in with their picture, their time, their mistakes and lives lost, and their line in their own voice:
+
+- **Dr. Ivy Thorne:** "Cure's in my pocket. Zombies in my rearview."
+- **Wren "Riptide" Calloway:** "Eleven jungles. Never lost a guest. Not starting tonight."
+- **Dr. Elias Fernsby:** "Look, little guy. We're flying!"
+- **Kip "Compass" Monroe:** "Finally. A direction I'm sure of. Up."
+
+Online, both players see who won. If you didn't make it, the winner's card appears over your cockpit, with the zombies at the glass. **Fly again** runs the whole jungle and cockpit again. **Change researcher** (solo) lets you pick someone else.
+
 ### Three ways to play
 
 Pick one on the title screen. Online, the person who sends the invite picks for both.
@@ -108,6 +119,7 @@ Then visit http://localhost:8765 in your browser.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
 - `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
 - `planes.js` draws the parked planes from above at real size (Cessna 172 and 150, Piper Cherokee, Piper Cub, Beechcraft Baron), with shadows, nav lights, stripes, chocks, tie-downs and fuel cans.
+- `ending.js` plays the escape: the camera pulls back over the island as the plane climbs away.
 - `hands.js` animates the character's hand reaching for each control, using the hand pictures in `assets/characters/`.
 - `assets/voice/` holds the recorded character lines (a female and a male voice).
 - `sound.js` makes the engine, starter, stall horn, bangs and groans with the browser's built-in audio.

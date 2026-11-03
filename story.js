@@ -144,6 +144,8 @@ G.Story = {
     show('story');
     storyLine();
   },
+  // straight to choosing a researcher (after a game, to switch characters)
+  chooseAgain(pick, done) { onPick = pick; onDone = done; chosen = null; toSelect(); },
   stop() { clearTimeout(timer); G.Sfx.stopFile(); },
 };
 })();
