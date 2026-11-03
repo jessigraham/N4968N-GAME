@@ -63,7 +63,7 @@ Both paths end at the airstrip: the cockpit race begins.
 
 ## 5. Effort lines during the race (same voice as the chosen character)
 
-Engine catches: "Yes! Come on, come on."
-Mistake: "No no no, not now."
+Engine catches: "Come on... come on, come on!"
+Mistake: "No, no, no! Not now!"
 Zombies at the glass: "Whoa!"
-Airborne: "Wheels up! We made it."
+Airborne: "We're up... we made it."
