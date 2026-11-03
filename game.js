@@ -346,15 +346,48 @@ Net.onMsg = m => {
   if (m.t === 's') applySnapshot(m.d);
   else if (m.t === 'start') { if (Net.role === 'guest') beginRace(); }
   else if (m.t === 'again') { wantAgain.them = true; $('#resStatus').textContent = 'Your rival wants a rematch!'; maybeRematch(); }
-  else if (m.t === 'hello') { if (Net.role === 'host') { $('#startOnline').disabled = false; } }
+  else if (m.t === 'pick') { oppChar = m.char; updateRival(); }
+  else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
 Net.onOpen = () => {
   Net.send({ t: 'hello' });
-  if (Net.role === 'host') {
-    setStatus('#inviteStatus', 'Your friend joined! Press Start when you’re both ready.');
-    $('#startOnline').disabled = false;
-  } else setStatus('#joinStatus', 'Connected! Waiting for your friend to start the race…');
+  setStatus(Net.role === 'host' ? '#inviteStatus' : '#joinStatus', 'Connected! Here comes the story…');
+  setTimeout(startStory, 1400);
 };
+
+// ---------- The beginning: story → researcher → path → airstrip (each player on their own device) ----------
+let oppChar = null, ready = { me: false, them: false };
+function startStory() {
+  ready = { me: false, them: false };
+  if (mode === 'online') oppGone = false;
+  oppChar = null;
+  updateRival();
+  G.Story.begin(pick => {
+    pickChar(pick);
+    if (mode === 'online') Net.send({ t: 'pick', char: pick });
+  }, () => {
+    if (mode === 'online' && !Net.connected()) mode = 'solo';   // rival left during the story
+    if (mode === 'solo') { beginRace(); return; }
+    ready.me = true;
+    Net.send({ t: 'ready', char: myChar });
+    showScreen('airstrip');
+    updateRival();
+    maybeStart();
+  });
+}
+function updateRival() {
+  const chip = $('#rivalChip');
+  chip.classList.toggle('hidden', mode !== 'online' || state !== 'menu');
+  if (oppGone) { chip.textContent = 'Your rival left'; return; }
+  const who = oppChar ? CHARS[oppChar].name : null;
+  chip.innerHTML = ready.them ? `Rival: <b>${who}</b> · at the airstrip` : who ? `Rival: <b>${who}</b> · getting ready` : 'Rival: reading the story…';
+  $('#stripText').textContent = ready.them ? `${who} is here too. Get to your plane…` : `Waiting for ${who || 'your rival'} to reach the airstrip…`;
+}
+function maybeStart() {
+  if (Net.role === 'host' && ready.me && ready.them && Net.connected()) {
+    setTimeout(() => { Net.send({ t: 'start' }); beginRace(); }, 900);
+  }
+}
 Net.onClose = () => {
   if (mode !== 'online') return;
   oppGone = true;
@@ -363,7 +396,8 @@ Net.onClose = () => {
   setStatus('#inviteStatus', 'Your friend left.', true);
   setStatus('#joinStatus', 'The race host left.', true);
   $('#resStatus').textContent = 'Your rival left the race.';
-  $('#startOnline').disabled = true;
+  updateRival();
+  if (state === 'menu' && ready.me) { mode = 'solo'; beginRace(); }   // was waiting at the airstrip
 };
 Net.onStatus = (kind, text) => {
   const el = Net.role === 'host' ? '#inviteStatus' : '#joinStatus';
@@ -458,11 +492,15 @@ meCanvas.addEventListener('contextmenu', e => e.preventDefault());
 // ---------- Screens and race flow ----------
 function showScreen(name) {
   document.querySelectorAll('#menu .screen').forEach(s => s.classList.toggle('hidden', s.dataset.screen !== name));
-  $('#menu .card').classList.toggle('bare', name === 'home');
+  $('#menu .card').classList.toggle('bare', ['home', 'story', 'select', 'backstory', 'path', 'airstrip'].includes(name));
+  $('#menu').dataset.screen = name;
   $('#menu').classList.remove('hidden');
   G.Intro.start();
   if (soundWanted) Sfx.ambience(true);
+  if (name === 'home') G.Intro.setScene('jungle');
+  updateRival();
 }
+G.showScreen = showScreen;
 
 // Title-screen sound: silent until the first tap, then jungle ambience (unless switched off).
 let soundWanted = false, soundTouched = false;
@@ -507,14 +545,14 @@ function beginRace() {
   }
   $('#arena').className = opp ? 'duo' : 'solo';
   $('#oppWrap').classList.toggle('hidden', !opp);
-  if (opp) $('#oppName').textContent = opp.reg + (opp.decoy ? ' (decoy 172)' : '');
-  if (opp) opp.char = 'kip';
+  if (opp) { opp.char = oppChar || 'kip'; $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg; }
   $('#menu').classList.add('hidden');
   G.Intro.stop(); Sfx.ambience(false);
   $('#result').classList.add('hidden');
   $('#quitBtn').classList.remove('hidden');
   document.body.classList.add('playing');
   state = 'countdown'; countdown = 3; raceT = 0; endAt = 0; step.lastBeep = 4;
+  G.Story.stop(); updateRival();
   fitAll();
 }
 
@@ -549,6 +587,7 @@ function toMenu() {
   Net.leave();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   me = newPlayer(0); opp = null;
+  G.Story.stop();
   mode = 'solo'; state = 'menu';
   $('#arena').className = 'solo';
   $('#oppWrap').classList.add('hidden');
@@ -558,10 +597,9 @@ function toMenu() {
   showScreen('home');
 }
 
-$('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'solo'; beginRace(); });
+$('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'solo'; startStory(); });
 $('#goInvite').addEventListener('click', () => {
   Sfx.init(); mode = 'online';
-  $('#startOnline').disabled = true;
   $('#inviteCode').textContent = '····'; $('#inviteLink').value = '';
   showScreen('invite');
   Net.host();
@@ -574,7 +612,6 @@ $('#joinBtn').addEventListener('click', () => {
   Sfx.init(); goFullscreen(); mode = 'online'; Net.join(code);
 });
 $('#joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#joinBtn').click(); });
-$('#startOnline').addEventListener('click', () => { if (!Net.connected()) return; goFullscreen(); Net.send({ t: 'start' }); beginRace(); });
 $('#copyBtn').addEventListener('click', async () => {
   const link = $('#inviteLink').value; if (!link) return;
   try { await navigator.clipboard.writeText(link); $('#copyBtn').textContent = 'Copied!'; }

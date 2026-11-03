@@ -122,6 +122,32 @@ const Sfx = G.Sfx = {
     g.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
     s.start(t); s.stop(t + 3.3);
   },
+  // Play a one-off recorded file (like a character's backstory line); only one plays at a time.
+  files: {}, current: null,
+  playFile(url) {
+    if (!this.ctx) return;
+    this.stopFile();
+    const token = this.current = {};
+    const get = this.files[url] || (this.files[url] = fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+      .then(b => this.ctx.decodeAudioData(b)));
+    get.then(buf => {
+      if (this.current !== token) return;
+      const s = this.ctx.createBufferSource(), g = this.ctx.createGain();
+      s.buffer = buf; g.gain.value = 1.4; s.connect(g); g.connect(this.out); s.start(this.t + 0.25);
+      token.src = s;
+    }).catch(() => {});
+  },
+  stopFile() { if (this.current && this.current.src) { try { this.current.src.stop(); } catch (e) {} } this.current = null; },
+  // Running for the airstrip: pounding footsteps and a racing heartbeat.
+  run(dur) {
+    if (!this.ctx) return;
+    const t0 = this.t;
+    for (let k = 0; k < dur / 0.27; k++) this.burst(k % 2 ? 0.3 : -0.3, t0 + k * 0.27, 0.07, 380, 'lowpass', 0.5);
+    for (let k = 0; k < dur / 0.5; k++) {
+      this.tone(0, t0 + k * 0.5, 0.12, 62, 'sine', 0.7, 45);
+      this.tone(0, t0 + k * 0.5 + 0.16, 0.1, 58, 'sine', 0.5, 42);
+    }
+  },
   // Recorded character lines: assets/voice/<voice>-<line>.mp3 (voice = female or male). Missing files stay silent.
   voices: {},
   loadVoices(voice) {

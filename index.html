@@ -30,11 +30,13 @@
 </main>
 
 <div id="countdown" class="hidden"></div>
+<div id="runFade" class="hidden"></div>
 <div id="rotate"><div>Turn your phone sideways<br><span>⟳</span></div></div>
 
 <div id="menu" class="overlay">
   <canvas id="introBg"></canvas>
   <button id="introSound" type="button" aria-label="Sound">🔈 Sound off</button>
+  <div id="rivalChip" class="hidden"></div>
   <div class="card bare">
     <!-- home: the title screen -->
     <div class="screen" data-screen="home">
@@ -43,13 +45,6 @@
         <p class="tagline">The fever is spreading. The radio is dead.<br>One airstrip. One way out.</p>
       </div>
       <div class="plate">
-        <p class="pickLabel">Choose your researcher</p>
-        <div id="charPick">
-          <button type="button" data-char="ivy"><img src="assets/characters/ivy.png" alt="">Dr. Ivy<small>Botanist</small></button>
-          <button type="button" data-char="wren"><img src="assets/characters/wren.png" alt="">Wren<small>Jungle Explorer</small></button>
-          <button type="button" data-char="elias"><img src="assets/characters/elias.png" alt="">Dr. Elias<small>Botanist</small></button>
-          <button type="button" data-char="kip"><img src="assets/characters/kip.png" alt="">Kip<small>Jungle Explorer</small></button>
-        </div>
         <button id="goInvite" type="button" class="hero-btn">Invite a player<small>Send a link to a friend's phone or computer</small></button>
         <button id="goJoin" type="button" class="second-btn">Join with a code</button>
         <div class="links">
@@ -72,6 +67,48 @@
       </ul>
       <button type="button" class="back">Back</button>
     </div>
+    <!-- opening story -->
+    <div class="screen hidden" data-screen="story">
+      <p class="storyText" id="storyText"></p>
+      <div class="storyNav">
+        <span id="storyCount"></span>
+        <button id="storyNext" type="button" class="second-btn">Continue</button>
+        <button id="storySkip" type="button" class="link">Skip story</button>
+      </div>
+    </div>
+    <!-- choose your researcher -->
+    <div class="screen hidden" data-screen="select">
+      <h2 class="cine">Who are you?</h2>
+      <div id="selectCards"></div>
+    </div>
+    <!-- backstory -->
+    <div class="screen hidden" data-screen="backstory">
+      <div class="bs">
+        <img id="bsImg" alt="">
+        <div class="bsText">
+          <p class="role" id="bsRole"></p>
+          <h2 class="cine" id="bsName"></h2>
+          <p id="bsStory"></p>
+          <blockquote id="bsLine"></blockquote>
+          <button id="bsGo" type="button" class="hero-btn">This is me</button>
+          <button id="bsBack" type="button" class="link">Choose someone else</button>
+        </div>
+      </div>
+    </div>
+    <!-- path scene -->
+    <div class="screen hidden" data-screen="path">
+      <p class="role" id="pathPlace"></p>
+      <h2 class="cine" id="pathTitle"></h2>
+      <p class="pathText" id="pathText"></p>
+      <div id="pathItems"></div>
+      <button id="pathRun" type="button" class="hero-btn" disabled>Run for the airstrip!</button>
+    </div>
+    <!-- online: waiting at the airstrip -->
+    <div class="screen hidden" data-screen="airstrip">
+      <p class="role">The airstrip</p>
+      <h2 class="cine">You made it to the planes.</h2>
+      <p class="pathText" id="stripText">Waiting for your rival to reach the airstrip…</p>
+    </div>
     <!-- invite -->
     <div class="screen hidden" data-screen="invite">
       <h2>Invite a player</h2>
@@ -83,7 +120,6 @@
         <button id="shareBtn" type="button" class="hidden">Share…</button>
       </div>
       <p class="status" id="inviteStatus"></p>
-      <button id="startOnline" type="button" class="big" disabled>Start the race</button>
       <button type="button" class="back">Back</button>
     </div>
     <!-- join -->
@@ -121,5 +157,6 @@
 <script src="intro.js"></script>
 <script src="net.js"></script>
 <script src="game.js"></script>
+<script src="story.js"></script>
 </body>
 </html>

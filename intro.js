@@ -7,6 +7,7 @@ const TAU = Math.PI * 2;
 const canvas = document.getElementById('introBg');
 const ctx = canvas.getContext('2d');
 const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+let scene = 'jungle';
 let running = false, t0 = performance.now(), last = 0, W = 0, H = 0, flash = 0, nextFlash = 6;
 
 // film grain: one small noise tile, shifted every frame
@@ -158,6 +159,51 @@ function draw(now) {
     palm(x * W, y * H, h * u * (H > W ? 0.7 : 1), lean, Math.sin(t * 0.6 + k) * 0.8, '#040806');
   }
 
+  // scene dressing for the story: inside the lab tent, or at the river camp
+  if (scene === 'river') {
+    const ry = hy + 62 * u, rh = 46 * u;
+    const rg = ctx.createLinearGradient(0, ry, 0, ry + rh);
+    rg.addColorStop(0, '#d98a5a'); rg.addColorStop(0.5, '#6b3946'); rg.addColorStop(1, '#1d1622');
+    ctx.fillStyle = rg; ctx.fillRect(0, ry, W, rh);
+    ctx.strokeStyle = 'rgba(255,210,160,0.35)'; ctx.lineWidth = 1.5 * dpr;
+    for (let i = 0; i < 26; i++) {
+      const x = ((i * 0.137 + t * 0.03 * (1 + (i % 3))) % 1.1 - 0.05) * W, y = ry + ((i * 7) % 10) / 10 * rh;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (20 + (i % 4) * 12) * u, y); ctx.stroke();
+    }
+    const fx = W * 0.16, fy = H * 0.9;
+    const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, 260 * u);
+    fg.addColorStop(0, `rgba(255,150,60,${0.45 + 0.1 * Math.sin(t * 13)})`); fg.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = fg; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 18; i++) {
+      const k = (t * 0.35 + i / 18) % 1;
+      ctx.fillStyle = `rgba(255,${170 + i * 4},90,${1 - k})`;
+      ctx.fillRect(fx + Math.sin(i * 3 + t * 2) * 30 * u * k, fy - k * 260 * u, 2.5 * dpr, 2.5 * dpr);
+    }
+  } else if (scene === 'lab') {
+    // tent canvas walls with the flap open onto the jungle
+    ctx.fillStyle = '#16110d';
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.moveTo(W * 0.5, H * 0.12); ctx.lineTo(W * 0.24, H * 0.98); ctx.lineTo(W * 0.76, H * 0.98); ctx.closePath();
+    ctx.fill('evenodd');
+    const lx = W * 0.2, ly = H * 0.28, flick = 0.8 + 0.2 * Math.sin(t * 17) * Math.sin(t * 5.3);
+    const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 520 * u);
+    lg.addColorStop(0, `rgba(255,190,110,${0.55 * flick})`); lg.addColorStop(1, 'rgba(255,170,90,0)');
+    ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#2b2118'; ctx.lineWidth = 2 * dpr;
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, ly - 20 * u); ctx.stroke();
+    ctx.fillStyle = `rgba(255,214,150,${flick})`; ctx.beginPath(); ctx.ellipse(lx, ly, 12 * u, 18 * u, 0, 0, TAU); ctx.fill();
+    // lab bench with flasks and a potted plant
+    ctx.fillStyle = '#0b0806'; ctx.fillRect(0, H * 0.8, W, H * 0.2);
+    for (const [fx, fh] of [[0.08, 70], [0.12, 50], [0.86, 60], [0.9, 85]]) {
+      ctx.beginPath(); ctx.moveTo(W * fx - 8 * u, H * 0.8); ctx.lineTo(W * fx - 26 * u, H * 0.8 - 8 * u); ctx.lineTo(W * fx - 8 * u, H * 0.8 - fh * u);
+      ctx.lineTo(W * fx + 8 * u, H * 0.8 - fh * u); ctx.lineTo(W * fx + 26 * u, H * 0.8 - 8 * u); ctx.lineTo(W * fx + 8 * u, H * 0.8); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(140,230,170,0.25)';
+    ctx.beginPath(); ctx.ellipse(W * 0.12, H * 0.8 - 20 * u, 16 * u, 12 * u, 0, 0, TAU); ctx.fill();
+  }
+  if (scene === 'story') { ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.fillRect(0, 0, W, H); }
+
   // vignette and grain
   const v = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.25, W / 2, H * 0.5, Math.max(W, H) * 0.75);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.78)');
@@ -180,6 +226,7 @@ function loop(now) {
 G.Intro = {
   start() { running = true; if (!looping) { looping = true; requestAnimationFrame(loop); } },
   stop() { running = false; },
+  setScene(name) { scene = name; },
 };
 // some browsers pause animation frames in hidden or embedded panes; nudge it along
 setInterval(() => { if (running && performance.now() - last > 300) draw(performance.now()); }, 120);

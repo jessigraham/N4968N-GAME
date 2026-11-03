@@ -6,15 +6,20 @@ This is the first playable piece of the game: the cockpit race. It runs in any w
 
 ## How to play
 
-First, **choose your researcher**: Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). Your character's hands work the controls, and your character's voice shouts "Clear prop!" and reacts during the race.
+The game opens on the title screen. From there:
 
-**On your own:** choose **Solo practice** to learn the checklist.
+1. **The story:** what happened on Kanoa Island, one line at a time (you can skip it).
+2. **Who are you?** Choose Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). You'll see their backstory and hear their line.
+3. **Your path:** grab your things in the lab tent or at the river camp, then **run for the airstrip**.
+4. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
+
+**On your own:** choose **Solo practice**.
 
 **Against a friend on another device:**
 1. Choose **Invite a player**. You get a 4-letter code and a link.
 2. Send the link (Copy or Share) to your friend's phone or computer, or read them the code.
 3. Your friend opens the link (or chooses **Join with a code**) and presses **Join**.
-4. When they've joined, press **Start the race**. You see your cockpit large and theirs live in a small window in the corner, hands and all.
+4. Once they've joined, you each go through the story and choose your own researcher. When both of you reach the airstrip, the race starts together. You see your cockpit large and theirs live in a small window in the corner, hands and all.
 
 On a phone, turn it sideways.
 
