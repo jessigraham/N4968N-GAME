@@ -24,6 +24,18 @@ The game opens on the title screen. From there:
 
 On a phone, turn it sideways.
 
+### Three ways to play
+
+Pick one on the title screen. Online, the person who sends the invite picks for both.
+
+| Mode | | Jungle clock | Cockpit clock | What's different |
+|---|---|---|---|---|
+| **Clear Skies** (easy) | "The fever's still miles away." | 5:00 | 2:00 | Few mosquitoes, slow zombies, smoke clue early, the next control glows right away |
+| **Crosswind** (medium) | "They're closer than you think." | 3:30 | 1:30 | The normal game |
+| **Mayday** (hard) | "Patient zero is already at the airstrip." | 2:15 | 1:00 | No trail signs, a faint radio, swarms of mosquitoes, fast zombies, no checklist highlight, 5-second mistakes |
+
+In the jungle, zombies trickle in, come in waves at half time and at 80%, and pour out of the trees when the jungle clock runs out (you can still make it to the planes). In the cockpit, they reach the windows at half time and bang on the glass at 80%. All the numbers are in one table at the top of `game.js`.
+
 ### Running through the jungle
 
 - **Computer:** arrow keys or WASD to run, **Shift** to sprint (watch the stamina bar), **Space** or **Enter** to climb into a plane.
@@ -74,6 +86,7 @@ Then visit http://localhost:8765 in your browser.
 
 ## How it's built (all free)
 - Plain HTML, CSS and JavaScript, with no build step and no accounts.
+- `intro.js` paints the island at dusk (sky, volcano, palms, fog, fireflies, film grain). The title, the story and the view out of the cockpit all share it.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
 - `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
 - `hands.js` animates the character's hand reaching for each control, using the hand pictures in `assets/characters/`.

@@ -11,7 +11,6 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 // ---------- Tuning ----------
 const MW = 3600, MH = 2800, CELL = 40, GW = MW / CELL, GH = MH / CELL;
 const SPEED = 230, SPRINT = 1.65, BRUSH_SLOW = 0.55;
-const SMOKE_AFTER = 45;          // seconds before smoke above the trees gives the airstrip away
 const T = { BRUSH: 0, TRAIL: 1, WATER: 2, BRIDGE: 3, CLEAR: 4, STRIP: 5 };
 
 function rng(seed) {   // small seeded random generator (mulberry32)
@@ -20,7 +19,7 @@ function rng(seed) {   // small seeded random generator (mulberry32)
 }
 
 // ---------- Making the island ----------
-function generate(seed) {
+function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock: 210, startAwake: 0.6 }) {
   const R = rng(seed);
   const grid = new Uint8Array(GW * GH);   // all dense undergrowth to start
   const at = (cx, cy) => (cx < 0 || cy < 0 || cx >= GW || cy >= GH) ? -1 : grid[cy * GW + cx];
@@ -114,7 +113,7 @@ function generate(seed) {
     let n = goal; while (prev[n] && prev[n] !== from) n = prev[n];
     return N[n];
   };
-  const signs = ['J1', 'J2', 'J3'].map((k, i) => {
+  const signs = (cfg.signs ? ['J1', 'J2', 'J3'] : []).map((k, i) => {
     const to = nextToward(k, stripKey), j = N[k];
     const a = Math.atan2(to.y - j.y, to.x - j.x);
     return { x: j.x + Math.cos(a + 0.9) * 60, y: j.y + Math.sin(a + 0.9) * 60, angle: a, broken: i === Math.floor(R() * 3) };
@@ -140,15 +139,17 @@ function generate(seed) {
 
   // mosquito swarms by the water, zombies on the trails
   const swarms = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < cfg.swarms; i++) {
     const x = 200 + R() * (MW - 400);
     swarms.push({ x, y: riverY(x) + (R() - 0.5) * 420, ph: R() * TAU, r: 85 + R() * 30 });
   }
   const zombies = [];
-  for (let i = 0; i < 11; i++) {
+  for (let i = 0; i < cfg.zombies; i++) {
     let p; do { p = pick(trailPts); } while (dist(p, N.S) < 800);
+    // some are already out on the trails; the rest trickle in during the first half of the jungle clock
+    const wake = i < cfg.zombies * cfg.startAwake ? 0 : R() * cfg.jungleClock * 0.5;
     zombies.push({ x: p.x, y: p.y, hx: p.x, hy: p.y, tx: p.x, ty: p.y, ph: R() * TAU, limp: R() < 0.5, hunch: (R() - 0.5) * 0.4,
-      coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0 });
+      coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0, wake });
   }
 
   // parked planes along the edge of the strip: two that fly, three that never will
@@ -234,7 +235,7 @@ function update(dt) {
     s.cx = s.x + Math.sin(t * 0.4 + s.ph) * 120; s.cy = s.y + Math.cos(t * 0.31 + s.ph) * 80;
     const d = Math.hypot(s.cx - me.x, s.cy - me.y);
     buzz = Math.max(buzz, clamp(1 - d / 500, 0, 1));
-    if (d < s.r && t > me.sprayUntil) me.infection = Math.min(100, me.infection + 9 * dt);
+    if (d < s.r && t > me.sprayUntil) me.infection = Math.min(100, me.infection + opts.mode.swarmFever * dt);
   }
   if (me.infection >= 100 && t >= me.outUntil) {
     me.outUntil = t + 3; me.infection = 72;
@@ -244,10 +245,16 @@ function update(dt) {
   buzzSound(buzz * (t > me.sprayUntil ? 1 : 0.2));
 
   // zombies wander the trails, then shamble after you
+  const cfg = opts.mode, clock = cfg.jungleClock;
+  // waves at 50% and 80% of the jungle clock, then the horde pours out at zero
+  for (const [k, n, text] of [[0.5, cfg.wave, 'Branches snap all around you. More of them are coming…'], [0.8, cfg.wave, 'A second wave! They’re closing in on the trails.'], [1, cfg.pour, 'THE HORDE IS IN THE JUNGLE. RUN FOR THE PLANES!']]) {
+    if (t >= clock * k && !me['wave' + k]) { me['wave' + k] = true; spawnZombies(n, k === 1); say(text, '#ff6b6b', 3.5); G.Sfx.groan(0.3); }
+  }
   for (const z of world.zombies) {
+    if (t < z.wake) continue;
     const d = Math.hypot(z.x - me.x, z.y - me.y);
-    let tx = z.tx, ty = z.ty, spd = 38;
-    if (d < 260 && t >= me.outUntil) { tx = me.x; ty = me.y; spd = 95; }
+    let tx = z.tx, ty = z.ty, spd = 38 * cfg.zombieSpeed;
+    if ((d < 260 || (z.aggro && d < 1400)) && t >= me.outUntil) { tx = me.x; ty = me.y; spd = (z.aggro ? 120 : 95) * cfg.zombieSpeed; }
     else if (Math.hypot(z.tx - z.x, z.ty - z.y) < 10) { z.tx = z.hx + (Math.random() - 0.5) * 300; z.ty = z.hy + (Math.random() - 0.5) * 300; }
     const dd = Math.hypot(tx - z.x, ty - z.y) || 1;
     const nx = z.x + (tx - z.x) / dd * spd * dt, ny = z.y + (ty - z.y) / dd * spd * dt;
@@ -276,7 +283,7 @@ function update(dt) {
   const ds = Math.hypot(world.strip.cx - me.x, world.strip.cy - me.y);
   beaconSound(ds);
   if (!windShown && ds < 1300) { windShown = true; say('A windsock pokes above the trees…', '#ffd970', 3); }
-  if (!smokeShown && t > SMOKE_AFTER) { smokeShown = true; say('Smoke above the canopy. Someone lit a fire by the planes!', '#ffd970', 3.5); }
+  if (!smokeShown && t > opts.mode.smokeAfter) { smokeShown = true; say('Smoke above the canopy. Someone lit a fire by the planes!', '#ffd970', 3.5); }
   for (const s of world.signs) if (!s.seen && Math.hypot(s.x - me.x, s.y - me.y) < 120) { s.seen = true; say(s.broken ? 'A broken trail sign. Hard to read…' : 'A trail sign: STRIP →', '#ffd970', 2.2); }
   if (!me.foundStrip && me.x > world.strip.x0 - 40 && me.x < world.strip.x0 + world.strip.w + 40 && me.y > world.strip.y0 - 60 && me.y < world.strip.y0 + world.strip.h + 160) {
     me.foundStrip = true; say('THE AIRSTRIP! Find a plane that can fly.', '#7bed9f', 3);
@@ -304,6 +311,20 @@ function update(dt) {
   if (opts.onPos && t - (me.lastSend || 0) > 0.1) {
     me.lastSend = t;
     opts.onPos({ x: Math.round(me.x), y: Math.round(me.y), face: me.face, moving: me.moving });
+  }
+}
+
+// zombies coming out of the trees somewhere off-screen around you
+function spawnZombies(n, aggro) {
+  for (let i = 0; i < n; i++) {
+    for (let tries = 0; tries < 40; tries++) {
+      const a = Math.random() * TAU, r = 620 + Math.random() * 380;
+      const x = me.x + Math.cos(a) * r, y = me.y + Math.sin(a) * r;
+      if (blocked(x, y, 12)) continue;
+      world.zombies.push({ x, y, hx: x, hy: y, tx: me.x, ty: me.y, ph: Math.random() * TAU, limp: Math.random() < 0.5,
+        hunch: (Math.random() - 0.5) * 0.4, coat: ['lab', 'khaki', 'rags'][i % 3], cool: 0, wake: 0, aggro });
+      break;
+    }
   }
 }
 
@@ -339,7 +360,7 @@ function ensureSounds() {
 function buzzSound(v) { if (snd) snd.g.gain.setTargetAtTime(v * 0.05, G.Sfx.t, 0.1); }
 function beaconSound(d) {
   if (!snd) return;
-  const v = Math.pow(clamp(1 - d / 2600, 0, 1), 2);
+  const v = Math.pow(clamp(1 - d / 2600, 0, 1), 2) * opts.mode.radio;
   const a = Math.atan2(world.strip.cy - me.y, world.strip.cx - me.x);
   if (snd.pan.pan) snd.pan.pan.setTargetAtTime(clamp(Math.cos(a), -1, 1) * 0.8, G.Sfx.t, 0.2);
   snd.eg.gain.setTargetAtTime(v * 0.12, G.Sfx.t, 0.3);
@@ -448,7 +469,7 @@ function draw() {
   const inView = (x, y, m) => x > camX - m && x < camX + W / zoom + m && y > camY - m && y < camY + H / zoom + m;
   for (const tr of world.trees) if (inView(tr.x, tr.y, 80)) stand.push({ y: tr.y, f: () => drawTree(tr) });
   for (const p of world.planes) if (inView(p.x, p.y, 140)) stand.push({ y: p.y, f: () => drawPlane(p) });
-  for (const z of world.zombies) if (inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => { ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, 1); G.drawZombie(ctx, 0, 0, 64, z, t, false, 0); ctx.restore(); } });
+  for (const z of world.zombies) if (t >= z.wake && inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => { ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, 1); G.drawZombie(ctx, 0, 0, 64, z, t, false, 0); ctx.restore(); } });
   if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('RIVAL', ghost.x, ghost.y - 86); } });
   stand.push({ y: me.y, f: () => drawCharacter(charImg(opts.char), me.x, me.y, me.face, me.moving, me.step, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
@@ -488,6 +509,7 @@ function draw() {
   const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
   v.addColorStop(0, 'rgba(40,10,40,0.05)'); v.addColorStop(1, 'rgba(10,0,15,0.7)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  G.Scene.overlay(ctx, W, H, 0);   // the same film grain as the title and cockpit
   canvas.style.filter = me.infection >= 60 ? `blur(${((me.infection - 60) / 40 * 2.2 + 0.6).toFixed(1)}px) saturate(0.7)` : '';
   if (t < me.outUntil) { ctx.fillStyle = `rgba(0,0,0,${0.85})`; ctx.fillRect(0, 0, W, H); }
   edgeClue(camX, camY, zoom, s.cx, s.cy, smokeShown || me.hasMap, 'smoke');
@@ -553,10 +575,14 @@ function hud() {
     ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(mx + me.x / MW * mw, my + me.y / MH * mh, 3.5 * u, 0, TAU); ctx.fill();
     ctx.fillStyle = '#5a4528'; ctx.font = `700 ${10 * u}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('TORN MAP', mx + mw / 2, my + mh + 10 * u);
   }
+  const m = opts.mode, left = Math.max(0, m.jungleClock - t);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = m.color; ctx.font = `400 ${20 * u}px 'Bebas Neue', Impact, sans-serif`;
+  ctx.fillText(`${m.name.toUpperCase()}  ·  ${left > 0 ? 'ZOMBIES SWARM THE TRAILS IN ' + Math.floor(left / 60) + ':' + String(Math.floor(left % 60)).padStart(2, '0') : 'THE HORDE IS LOOSE'}`, W / 2, pad + 30 * u);
   if (deadline !== null) {
     const left = Math.max(0, deadline - t);
     ctx.fillStyle = '#ff6b6b'; ctx.font = `800 ${15 * u}px system-ui`; ctx.textAlign = 'center';
-    ctx.fillText(`Your rival is at the airstrip! The horde arrives in ${Math.ceil(left)}s`, W / 2, pad + 10 * u);
+    ctx.fillText(`Your rival is at the airstrip! The horde arrives in ${Math.ceil(left)}s`, W / 2, pad + 56 * u);
   }
   if (msg.text && t < msg.until) banner(msg.text, H * 0.2, msg.color);
   if (prompt) {
@@ -627,7 +653,7 @@ G.Jungle = {
   // opts: { seed, char, onBoard(plane), onPos(pos)?, onLate()? }
   start(o) {
     opts = o;
-    world = generate(o.seed);
+    world = generate(o.seed, o.mode);
     me = { x: world.start.x, y: world.start.y, face: 1, step: 0, moving: false, stamina: 100, infection: 0, kx: 0, ky: 0,
       stunUntil: 0, outUntil: 0, sprayUntil: 0, hit: -9, hasMap: false, foundStrip: false };
     ghost = null; taken = {}; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;

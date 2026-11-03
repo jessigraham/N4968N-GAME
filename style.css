@@ -334,3 +334,23 @@ body {
   background: linear-gradient(#ffd27d, #e8933a); box-shadow: 0 6px 0 #8a4f17;
 }
 @media (pointer: fine) { #jAct { bottom: 12%; } }
+
+/* ---------- difficulty modes ---------- */
+#modePick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#modePick button {
+  padding: 9px 6px 7px; border-radius: 10px; cursor: pointer; line-height: 1;
+  font-family: 'Bebas Neue', Impact, sans-serif; font-size: 22px; letter-spacing: .05em; color: #e9e6df;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.16);
+}
+#modePick button small { display: block; margin-top: 3px; font: 600 10px system-ui, sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #aaa; }
+#modePick button.on { color: var(--c); border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); box-shadow: 0 0 16px color-mix(in srgb, var(--c) 35%, transparent); }
+#modeTag { margin: 8px 0 0; min-height: 1.2em; text-align: center; font-style: italic; font-size: 14px; text-shadow: 0 1px 6px #000; }
+#modeBadge {
+  display: inline-block; margin-right: 6px; padding: 1px 8px; border: 1px solid; border-radius: 10px;
+  font: 400 15px/1.3 'Bebas Neue', Impact, sans-serif; letter-spacing: .08em; vertical-align: middle;
+}
+@media (max-height: 520px) and (orientation: landscape) {
+  #modePick button { font-size: 17px; padding: 6px 4px 5px; }
+  #modeTag { font-size: 12px; margin-top: 4px; }
+  .plate .pickLabel { margin-bottom: 4px; }
+}

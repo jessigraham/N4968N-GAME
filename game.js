@@ -5,8 +5,34 @@ const G = window.G;
 const { Sfx, Net } = G;
 
 // ---------- Tuning: change these to make the race easier or harder ----------
-const RACE_TIME = 90;   // seconds until the zombies overrun the airstrip
-const PENALTY = 3;      // seconds lost for doing something out of order
+// ---------- Difficulty modes: every number that changes with the mode lives here ----------
+// jungleClock: seconds before zombies swarm the trails. cockpitClock: seconds from climbing in until they reach the plane.
+// Jungle zombies trickle in, then come in waves at 50% and 80% of the jungle clock; at zero they pour out of the trees.
+// In the cockpit they reach the windows at 50% and bang on the glass at 80% of the cockpit clock.
+const MODES = G.MODES = {
+  easy: {
+    name: 'Clear Skies', tag: 'The fever’s still miles away.', color: '#5ec8e5',
+    jungleClock: 300, cockpitClock: 120, penalty: 2, hintAfter: 0, cardHighlight: true,
+    swarms: 5, swarmFever: 6, zombies: 6, zombieSpeed: 0.75, startAwake: 0.4, wave: 3, pour: 8,
+    smokeAfter: 20, signs: true, radio: 1.4,
+  },
+  medium: {
+    name: 'Crosswind', tag: 'They’re closer than you think.', color: '#f5aa4a',
+    jungleClock: 210, cockpitClock: 90, penalty: 3, hintAfter: 5, cardHighlight: true,
+    swarms: 9, swarmFever: 9, zombies: 11, zombieSpeed: 1, startAwake: 0.6, wave: 5, pour: 12,
+    smokeAfter: 45, signs: true, radio: 1,
+  },
+  hard: {
+    name: 'Mayday', tag: 'Patient zero is already at the airstrip.', color: '#ff5a4f',
+    jungleClock: 135, cockpitClock: 60, penalty: 5, hintAfter: Infinity, cardHighlight: false,
+    swarms: 15, swarmFever: 12, zombies: 15, zombieSpeed: 1.35, startAwake: 1, wave: 7, pour: 16,
+    smokeAfter: 90, signs: false, radio: 0.45,
+  },
+};
+let modeKey = 'medium';
+try { const m = localStorage.getItem('n4968n-mode'); if (MODES[m]) modeKey = m; } catch (e) {}
+const M = () => MODES[modeKey];
+let RACE_TIME = M().cockpitClock;   // seconds until the zombies overrun the airstrip (set from the mode)
 const FLOOD_WAIT = 7;   // seconds to wait after over-priming
 const VR = { 0: 55, 10: 55, 20: 60, 30: 65 };            // knots needed to lift off, by flap setting
 const FLAP_DRAG = { 0: 1, 10: 1, 20: 0.85, 30: 0.7 };   // acceleration on the takeoff roll
@@ -41,6 +67,7 @@ const STEPS = [
 ];
 const IDX = Object.fromEntries(STEPS.map((s, i) => [s.id, i]));
 G.STEPS = STEPS; G.RACE_TIME = RACE_TIME;
+G.mode = M;
 
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -123,14 +150,14 @@ function cascade(p) {
 }
 
 function penalty(p, text) {
-  p.lockUntil = raceT + PENALTY;
+  p.lockUntil = raceT + M().penalty;
   p.mistakes++;
   p.shake = 0.4;
   Object.keys(p.hold).forEach(k => { p.hold[k] = false; });
   Sfx.sputter();
   if (p.hand) p.hand.shaky = true;
   speak(p, 'mistake', 6);
-  say(p, text, '#ff6b6b', PENALTY);
+  say(p, text, '#ff6b6b', M().penalty);
 }
 
 // Is this control allowed right now? Moving on to the next step's control finishes a soft step (even if it's wrong).
@@ -146,7 +173,7 @@ function gate(p, ctrl) {
     p.step++;
     return true;
   }
-  penalty(p, `Out of order! Sputter… −${PENALTY}s\nFirst: ${s.short}`);
+  penalty(p, `Out of order! Sputter… −${M().penalty}s\nFirst: ${s.short}`);
   return false;
 }
 
@@ -281,10 +308,10 @@ function updateMe(p, dt) {
     if (!p.done) cascade(p);
     if (p.step !== p.lastStep) { p.lastStep = p.step; p.stepSince = raceT; }
 
-    const rem = RACE_TIME - raceT;
-    if (rem < 60 && raceT > p.nextGroan) { p.nextGroan = raceT + 3 + Math.random() * rem / 8; Sfx.groan(); }
-    if (rem < 25 && !p.whoaDone) { p.whoaDone = true; speak(p, 'whoa'); }
-    if (rem < 25 && raceT > p.nextBang) {
+    const rem = RACE_TIME - raceT, k = raceT / RACE_TIME;   // zombies reach the windows at 50%, bang on the glass at 80%
+    if (k > 0.3 && raceT > p.nextGroan) { p.nextGroan = raceT + 3 + Math.random() * rem / 8; Sfx.groan(); }
+    if (k > 0.5 && !p.whoaDone) { p.whoaDone = true; speak(p, 'whoa'); }
+    if (k > 0.8 && raceT > p.nextBang) {
       p.nextBang = raceT + 0.5 + Math.random() * (rem / 12 + 0.4);
       Sfx.bang();
       p.shake = 0.25;
@@ -347,6 +374,7 @@ Net.onMsg = m => {
   if (m.t === 's') applySnapshot(m.d);
   else if (m.t === 'start') { if (Net.role === 'guest') beginRace(); }
   else if (m.t === 'again') { wantAgain.them = true; $('#resStatus').textContent = 'Your rival wants a rematch!'; maybeRematch(); }
+  else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') {
@@ -358,7 +386,7 @@ Net.onMsg = m => {
   else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
 Net.onOpen = () => {
-  Net.send({ t: 'hello' });
+  Net.send({ t: 'hello', mode: Net.role === 'host' ? modeKey : undefined });
   setStatus(Net.role === 'host' ? '#inviteStatus' : '#joinStatus', 'Connected! Here comes the story…');
   setTimeout(startStory, 1400);
 };
@@ -388,7 +416,8 @@ function updateRival() {
   chip.classList.toggle('hidden', mode !== 'online' || state !== 'menu');
   if (oppGone) { chip.textContent = 'Your rival left'; return; }
   const who = oppChar ? CHARS[oppChar].name : null;
-  chip.innerHTML = ready.them ? `Rival: <b>${who}</b> · at the airstrip` : who ? `Rival: <b>${who}</b> · getting ready` : 'Rival: reading the story…';
+  const modeNote = Net.role === 'guest' ? ` · <span style="color:${M().color}">${M().name}</span>` : '';
+  chip.innerHTML = (ready.them ? `Rival: <b>${who}</b> · at the airstrip` : who ? `Rival: <b>${who}</b> · getting ready` : 'Rival: reading the story…') + modeNote;
   $('#stripText').textContent = ready.them ? `${who} is here too. Get to your plane…` : `Waiting for ${who || 'your rival'} to reach the airstrip…`;
 }
 function maybeStart() {
@@ -407,11 +436,12 @@ function startJungle(seed) {
   G.Intro.stop(); Sfx.ambience(false); G.Story.stop();
   $('#result').classList.add('hidden');
   $('#quitBtn').classList.remove('hidden');
-  $('#timer .lbl').textContent = 'Find the airstrip';
+  $('#timer .lbl').textContent = 'Zombies swarm the trails in';
   document.body.classList.add('playing');
   updateRival();
+  RACE_TIME = G.RACE_TIME = M().cockpitClock;
   G.Jungle.start({
-    seed, char: myChar,
+    seed, char: myChar, mode: M(),
     onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
     onBoard: plane => {
       if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id });
@@ -536,6 +566,22 @@ function showScreen(name) {
 }
 G.showScreen = showScreen;
 
+// Difficulty: picked on the title screen; online, the host's pick applies to both players.
+function setMode(k, fromHost) {
+  if (!MODES[k]) return;
+  modeKey = k;
+  if (!fromHost) { try { localStorage.setItem('n4968n-mode', k); } catch (e) {} }
+  const m = M();
+  document.querySelectorAll('#modePick button').forEach(b => b.classList.toggle('on', b.dataset.mode === k));
+  $('#modeTag').textContent = m.tag;
+  $('#modeTag').style.color = m.color;
+  const badge = $('#modeBadge');
+  badge.textContent = m.name; badge.style.color = m.color; badge.style.borderColor = m.color;
+  document.documentElement.style.setProperty('--mode', m.color);
+  if (mode === 'online' && Net.role === 'host' && !fromHost) Net.send({ t: 'mode', mode: k });
+}
+document.querySelectorAll('#modePick button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
 // Title-screen sound: silent until the first tap, then jungle ambience (unless switched off).
 let soundWanted = false, soundTouched = false;
 function setIntroSound(on) {
@@ -566,6 +612,7 @@ function goFullscreen() {
 const PLANES = { c172: 'N4968N', piper: 'N5512P' };
 function beginRace(o = {}) {
   Sfx.init();
+  RACE_TIME = G.RACE_TIME = M().cockpitClock;
   G.Jungle.stop();
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   const mySlot = mode === 'online' && Net.role === 'guest' ? 1 : 0;
@@ -727,14 +774,14 @@ function frame(now) {
 }
 function draw() {
   const rem = RACE_TIME - raceT;
-  $('#time').textContent = state === 'jungle' ? fmt(G.Jungle.elapsed()) : fmt(state === 'menu' ? RACE_TIME : rem);
+  $('#time').textContent = state === 'jungle' ? fmt(Math.max(0, M().jungleClock - G.Jungle.elapsed())) : fmt(state === 'menu' ? M().cockpitClock : rem);
   $('#timer').classList.toggle('danger', state === 'race' && rem < 20);
   if (document.hidden) return;
   const racing = state === 'race';
   if (me) {
     const cssScale = Math.min(meCanvas.clientWidth / G.CAMERA.w, meCanvas.clientHeight / G.CAMERA.h);
     G.drawCockpit(meCanvas.getContext('2d'), me, meCanvas.width, meCanvas.height, raceT,
-      { own: true, racing, keys: hasKeyboard, compact: cssScale < 0.62, solo: mode === 'solo' });
+      { own: true, racing, keys: hasKeyboard, compact: cssScale < 0.62, solo: mode === 'solo', hintAfter: M().hintAfter, cardHighlight: M().cardHighlight });
   }
   if (opp) {
     const oc = $('#oppCanvas');
@@ -744,7 +791,10 @@ function draw() {
     $('#oppStatus').textContent = '· ' + st;
   }
 }
-function loop(now) { frame(now); requestAnimationFrame(loop); }
+function loop(now) {
+  try { frame(now); } catch (e) { console.error(e); }   // never let one bad frame stop the game
+  requestAnimationFrame(loop);
+}
 requestAnimationFrame(loop);
 // Hidden or throttled tabs pause animation frames; keep the race clock and the online link ticking anyway.
 setInterval(() => { const now = performance.now(); if (now - last > 150) frame(now); }, 100);
@@ -752,6 +802,7 @@ setInterval(() => { const now = performance.now(); if (now - last > 150) frame(n
 // ---------- Start up ----------
 me = newPlayer(0);
 me.char = myChar;
+setMode(modeKey, true);
 G.preloadHands();
 document.querySelectorAll('#charPick button').forEach(b => b.addEventListener('click', () => pickChar(b.dataset.char)));
 pickChar(myChar);

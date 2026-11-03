@@ -74,9 +74,9 @@ function drawHand(ctx, char, x, y, mirror, rot, squash) {
 G.drawHands = (ctx, p, t, opt) => {
   const char = p.char || 'ivy';
   const now = performance.now();
-  const rem = G.RACE_TIME - t;
   // nerves: the hand trembles when the zombies are at the glass
-  const tremble = opt.racing && !p.done && rem < 25 ? 2 + (25 - rem) * 0.12 : 0;
+  const prog = t / G.RACE_TIME;   // the zombies bang on the glass from 80% of the cockpit clock
+  const tremble = opt.racing && !p.done && prog > 0.8 ? 2 + (prog - 0.8) * 30 : 0;
   const jitter = amp => [Math.sin(now / 37) * amp, Math.cos(now / 29) * amp];
 
   // both hands on the yoke while pulling back

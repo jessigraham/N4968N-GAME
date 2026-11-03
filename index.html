@@ -14,7 +14,7 @@
 <body>
 <header id="topbar">
   <div class="brand">N4968N <span>cockpit race</span></div>
-  <div id="timer"><span class="lbl">Zombies overrun the airstrip in</span> <b id="time">1:30</b></div>
+  <div id="timer"><span id="modeBadge"></span> <span class="lbl">Zombies overrun the airstrip in</span> <b id="time">1:30</b></div>
   <div class="tools">
     <button id="muteBtn" type="button">Sound: on</button>
     <button id="quitBtn" type="button" class="hidden">Quit</button>
@@ -51,6 +51,13 @@
         <p class="tagline">The fever is spreading. The radio is dead.<br>One airstrip. One way out.</p>
       </div>
       <div class="plate">
+        <p class="pickLabel">How bad is it out there?</p>
+        <div id="modePick">
+          <button type="button" data-mode="easy" style="--c:#5ec8e5">Clear Skies<small>Easy</small></button>
+          <button type="button" data-mode="medium" style="--c:#f5aa4a">Crosswind<small>Medium</small></button>
+          <button type="button" data-mode="hard" style="--c:#ff5a4f">Mayday<small>Hard</small></button>
+        </div>
+        <p id="modeTag"></p>
         <button id="goInvite" type="button" class="hero-btn">Invite a player<small>Send a link to a friend's phone or computer</small></button>
         <button id="goJoin" type="button" class="second-btn">Join with a code</button>
         <div class="links">

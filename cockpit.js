@@ -157,22 +157,6 @@ function drawZombie(ctx, x, y, h, z, t, armsUp, haze = 0) {
   ctx.restore();
 }
 
-// A palm tree: curved trunk and drooping fronds. Darker and hazier with distance.
-function palm(ctx, x, y, h, lean, seed, haze) {
-  const tx = x + lean * h * 0.35, ty = y - h;
-  ctx.strokeStyle = shade('#3b2f22', 0.8, haze); ctx.lineWidth = Math.max(1, h * 0.03);
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + lean * h * 0.05, y - h * 0.6, tx, ty); ctx.stroke();
-  ctx.strokeStyle = shade(seed % 2 ? '#1d3a1f' : '#244521', 0.85, haze);
-  ctx.lineWidth = Math.max(1, h * 0.022);
-  for (let i = 0; i < 8; i++) {
-    const a = (i / 8) * TAU + seed;
-    const len = h * (0.32 + 0.08 * Math.sin(seed * 3 + i));
-    const ex = tx + Math.cos(a) * len, ey = ty + Math.abs(Math.sin(a)) * len * 0.25 + len * 0.35;
-    ctx.beginPath(); ctx.moveTo(tx, ty);
-    ctx.quadraticCurveTo(tx + Math.cos(a) * len * 0.6, ty - len * 0.25, ex, ey); ctx.stroke();
-  }
-}
-
 function zombieDepth(z, p, t, T) {
   const appearT = z.appear * T;
   if (t < appearT) return -1;
@@ -185,24 +169,19 @@ function world(ctx, p, t, L, R) {
   const W = VW, winH = WIN, cx = 800;
   const pitch = p.airborne ? Math.min(1, (t - p.finishT) * 0.8) * 0.22
     : p.rotT * 0.1 + (p.stall ? Math.abs(Math.sin(t * 14)) * 0.04 : 0);
-  const hy = winH * (0.42 + pitch);
+  const hy = winH * (0.6 + pitch);
   const camH = winH * 0.2 * (1 + p.alt * 3);
   const proj = z => hy + camH / z;
   const sx = (x, z) => cx + x * W * 0.22 / z;
 
-  let g = ctx.createLinearGradient(0, 0, 0, hy);
-  g.addColorStop(0, '#2a1d3d'); g.addColorStop(0.55, '#8a4553'); g.addColorStop(1, '#f39a52');
-  ctx.fillStyle = g; ctx.fillRect(L, -400, R - L, hy + 401);
-  circle(ctx, cx + 360, hy - 28, 26, 'rgba(255,210,140,0.95)');
-  // volcano on the island
-  ctx.fillStyle = '#41293f';
-  ctx.beginPath(); ctx.moveTo(140, hy); ctx.lineTo(420, hy - 80); ctx.lineTo(490, hy - 76); ctx.lineTo(760, hy); ctx.fill();
-  ctx.fillStyle = '#1f3a22'; ctx.fillRect(L, hy, R - L, 900);
-  ctx.fillStyle = '#16341f';
-  for (let x = L; x <= R; x += 34) {
-    const r = 9 + 6 * (Math.sin(x * 0.05) + 1);
-    ctx.beginPath(); ctx.arc(x, hy, r, Math.PI, 0); ctx.fill();
-  }
+  // the same island as the title and story: dusk sky, volcano, far hills, distant palms, fog, fireflies
+  // (wide enough that the volcano sits right at the end of the strip)
+  const SH = 640, top = hy - 0.62 * SH;
+  const SW = Math.max((cx - L) / 0.245, (R - cx) / 0.755) + 40, left = cx - 0.245 * SW;
+  ctx.save(); ctx.translate(left, top);
+  G.Scene.paint(ctx, SW, SH, t, { backdrop: true, px: 0.9 });
+  ctx.restore();
+  ctx.fillStyle = '#15231a'; ctx.fillRect(L, hy + 18, R - L, 900);
   // the dirt strip
   const zN = 0.3, zF = 80;
   ctx.fillStyle = '#8b6a45';
@@ -224,7 +203,7 @@ function world(ctx, p, t, L, R) {
   }
   // jungle walls on both sides of the strip
   for (const side of [-1, 1]) {
-    ctx.fillStyle = side < 0 ? '#0f2617' : '#112a19';
+    ctx.fillStyle = side < 0 ? '#0e1a14' : '#11201a';
     ctx.beginPath();
     ctx.moveTo(sx(2.6 * side, zF), proj(zF));
     let lastZ = zF;
@@ -241,7 +220,7 @@ function world(ctx, p, t, L, R) {
       const z = 26 * Math.pow(0.8, k) + 0.6, haze = clamp(z / 30, 0, 0.8);
       const xw = side * (2.5 + ((k * 37) % 7) / 10);
       if (sx(xw, z) < L - 200 || sx(xw, z) > R + 200) continue;
-      palm(ctx, sx(xw, z), proj(z) - winH * 0.25 / z, winH * (0.55 + ((k * 13) % 5) / 12) / z, -side * 0.4, k + side, haze);
+      G.Scene.palm(ctx, sx(xw, z), proj(z) - winH * 0.15 / z, winH * (0.42 + ((k * 13) % 5) / 14) / z, -side * 0.4, Math.sin(t * 0.8 + k), shade('#0e1a14', 1, haze * 0.8));
     }
   }
   const mist = ctx.createLinearGradient(0, hy - 30, 0, hy + 60);
@@ -281,13 +260,14 @@ function windshield(ctx, p, t, L, R, T, opt) {
   ctx.fillStyle = p.color; ctx.fillRect(cx - 640, WIN * 0.985, 1280, 6);
 
   // zombies at the windows near the end
-  const rem = G.RACE_TIME - t;
-  let n = p.overrun ? 7 : (!p.airborne && opt.racing && rem < 28 ? Math.ceil((28 - rem) / 4) : 0);
+  // they reach the windows at half the cockpit clock and keep piling up
+  const T0 = G.RACE_TIME * 0.5, step = G.RACE_TIME * 0.5 / 7;
+  let n = p.overrun ? 7 : (!p.airborne && opt.racing && t > T0 ? Math.ceil((t - T0) / step) : 0);
   n = Math.min(n, 7);
   const spots = [[60, 1], [1540, 1.05], [330, 0.85], [1240, 0.9], [-40, 1.15], [1640, 1.12], [800, 1.2]];
   for (let i = 0; i < n; i++) {
     const [fx, sc] = spots[i];
-    const rise = p.overrun ? 1 : clamp(t - (G.RACE_TIME - 28 + i * 4), 0, 1);
+    const rise = p.overrun ? 1 : clamp(t - (T0 + i * step), 0, 1);
     const h = WIN * 1.05 * sc;
     const y = WIN * (1.22 + (1 - rise) * 0.7) + Math.sin(t * 3 + i * 2) * 8;
     drawZombie(ctx, fx, y, h, { ph: i * 1.3, limp: i % 2, hunch: (i % 3 - 1) * 0.3, coat: ['lab', 'rags', 'khaki'][i % 3] }, t, true, 0);
@@ -531,7 +511,7 @@ function flapLever(ctx, p) {
   ctx.strokeStyle = '#999'; ctx.lineWidth = 2; ctx.stroke();
 }
 
-function checklistCard(ctx, p, compact) {
+function checklistCard(ctx, p, compact, highlight) {
   const x = 1108, y = 462, w = 276, h = 352;
   ctx.fillStyle = '#f7f5ef'; rr(ctx, x, y, w, h, 8); ctx.fill();
   ctx.fillStyle = '#d0322a'; rr(ctx, x, y, w, 40, 8); ctx.fill(); ctx.fillRect(x, y + 24, w, 16);
@@ -544,8 +524,8 @@ function checklistCard(ctx, p, compact) {
     const i = first + k; if (i >= n) break;
     const ly = y + 62 + k * lh + (compact ? 6 : 0);
     const skipped = p.skipped.includes(i), done = i < p.step, cur = i === p.step && !p.done;
-    if (cur) { ctx.fillStyle = '#ffd970'; ctx.fillRect(x + 6, ly - lh / 2 + 1, w - 12, lh - 2); }
-    const mark = skipped ? '!' : done ? '✓' : cur ? '▶' : String(i + 1);
+    if (cur && highlight) { ctx.fillStyle = '#ffd970'; ctx.fillRect(x + 6, ly - lh / 2 + 1, w - 12, lh - 2); }
+    const mark = skipped ? '!' : done ? '✓' : cur && highlight ? '▶' : String(i + 1);
     const col = skipped ? '#c0601a' : done ? '#7c8a72' : '#1d1d1d';
     txt(ctx, mark, x + 22, ly, fs, col, 'center', 800);
     const label = steps[i].label && (cur || done) ? steps[i].label(p) : steps[i].short;
@@ -631,11 +611,11 @@ function panel(ctx, p, t, L, R, B, opt) {
   pushPull(ctx, 1010, 752, p.mixture ? 0 : 1, 'mixture', 'MIXTURE');
   fuelSelector(ctx, 880, 862, p.fuel);
   flapLever(ctx, p);
-  checklistCard(ctx, p, opt.compact);
+  checklistCard(ctx, p, opt.compact, opt.cardHighlight !== false);
   yoke(ctx, p.pull);
 
   // hint: after a few seconds stuck, the control you need glows
-  if (opt.own && !p.done && opt.racing && t - p.stepSince > 5 && t >= p.lockUntil) {
+  if (opt.own && !p.done && opt.racing && t - p.stepSince >= (opt.hintAfter ?? 5) && t >= p.lockUntil) {
     const s = G.SPOTS[G.STEPS[p.step].ctrls[0]];
     ctx.strokeStyle = `rgba(255,217,112,${0.45 + 0.4 * Math.sin(t * 6)})`; ctx.lineWidth = 6;
     rr(ctx, s.x - 4, s.y - 4, s.w + 8, s.h + 8, 14); ctx.stroke();
