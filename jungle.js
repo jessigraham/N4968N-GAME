@@ -82,11 +82,12 @@ function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock
   paint(N.S.x, N.S.y, 150, T.CLEAR);
   for (const k of spots) if (k !== stripKey) paint(N[k].x, N[k].y, 230, T.CLEAR);
   // the airstrip itself: a long dirt clearing
-  const SW = 1000, SH = 210;
+  // a long dirt strip with room to park real-size planes on both sides
+  const SW = 1500, SH = 210;
   strip.w = SW; strip.h = SH;
-  const sx0 = clamp(strip.x - SW / 2, 60, MW - SW - 60), sy0 = clamp(strip.y - SH / 2, 60, MH - SH - 160);
+  const sx0 = clamp(strip.x - SW / 2, 60, MW - SW - 60), sy0 = clamp(strip.y - SH / 2, 470, MH - SH - 480);
   strip.x0 = sx0; strip.y0 = sy0; strip.cx = sx0 + SW / 2; strip.cy = sy0 + SH / 2;
-  for (let y = sy0 - 60; y <= sy0 + SH + 150; y += 20) for (let x = sx0 - 40; x <= sx0 + SW + 40; x += 20) paint(x, y, 22, T.CLEAR);
+  for (let y = sy0 - 450; y <= sy0 + SH + 450; y += 20) for (let x = sx0 - 60; x <= sx0 + SW + 60; x += 20) paint(x, y, 22, T.CLEAR);
   for (let y = sy0; y <= sy0 + SH; y += 20) for (let x = sx0; x <= sx0 + SW; x += 20) paint(x, y, 16, T.STRIP);
 
   // trees and bushes in the undergrowth
@@ -152,21 +153,20 @@ function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock
       coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0, wake });
   }
 
-  // parked planes along the edge of the strip: two that fly, three that never will
+  // parked planes on both sides of the strip: two that fly, three that never will
   const planes = [
-    { id: 'c172', reg: 'N4968N', type: 'Cessna 172', flyable: true, color: '#f4f1ea', stripe: '#c0392b', high: true },
-    { id: 'piper', reg: 'N5512P', type: 'Piper Cherokee', flyable: true, color: '#e9e2cf', stripe: '#1f6fb2', high: false },
-    { id: 'w1', reg: 'N9031T', type: 'Cessna 150', flyable: false, why: 'No propeller. Keep looking!', color: '#cfc9bb', stripe: '#555', high: true, wreck: true },
-    { id: 'w2', reg: 'N2207K', type: 'Piper Cub', flyable: false, why: 'Flat tire and a cracked wing. Not this one!', color: '#e7c64a', stripe: '#222', high: true, wreck: true },
-    { id: 'w3', reg: 'N7766B', type: 'Beechcraft', flyable: false, why: 'The fuel tank is full of bullet holes.', color: '#bfc6cc', stripe: '#7a2', high: false, wreck: true },
+    { id: 'c172', kind: 'c172', reg: 'N4968N', type: 'Cessna 172', flyable: true, stripe: '#a8322b' },
+    { id: 'piper', kind: 'cherokee', reg: 'N5512P', type: 'Piper Cherokee', flyable: true, stripe: '#1f5f9e' },
+    { id: 'w1', kind: 'c150', reg: 'N9031T', type: 'Cessna 150', flyable: false, why: 'Covered up, and somebody took the propeller. Keep looking!', stripe: '#5f6b3a', paint: '#ddd8c9', cover: true, noProp: true, oil: true },
+    { id: 'w2', kind: 'cub', reg: 'N2207K', type: 'Piper Cub', flyable: false, why: 'Flat tire and a cracked wing. Not this one!', stripe: '#1a1a1a', paint: '#e2bd3c', flatTire: true },
+    { id: 'w3', kind: 'baron', reg: 'N7766B', type: 'Beechcraft Baron', flyable: false, why: 'The fuel tanks are full of bullet holes.', stripe: '#2e7d4f', paint: '#e3e0d6', bulletHoles: true, oil: true },
+  ];
+  const slots = [
+    { x: sx0 + 270, y: sy0 + SH + 200, rot: -Math.PI / 2 }, { x: sx0 + 760, y: sy0 + SH + 200, rot: -Math.PI / 2 }, { x: sx0 + 1250, y: sy0 + SH + 200, rot: -Math.PI / 2 },
+    { x: sx0 + 510, y: sy0 - 200, rot: Math.PI / 2 }, { x: sx0 + 1000, y: sy0 - 200, rot: Math.PI / 2 },
   ];
   const order = planes.map((p, i) => i).sort(() => R() - 0.5);
-  planes.forEach((p, i) => {
-    const slot = order[i];
-    p.x = sx0 + 110 + slot * ((SW - 220) / 4);
-    p.y = sy0 + SH + 70;
-    p.rot = -Math.PI / 2 + (R() - 0.5) * 0.3;
-  });
+  planes.forEach((p, i) => { const sl = slots[order[i]]; p.x = sl.x; p.y = sl.y; p.rot = sl.rot + (R() - 0.5) * 0.25; });
 
   const checkpoints = [{ ...N.S, lit: true, camp: true }, ...['J1', 'J2', 'J3'].map(k => ({ x: N[k].x - 50, y: N[k].y - 50, lit: false }))];
   return { checkpoints, seed, grid, at, riverY, bridges, N, strip, stripKey, trees, buckets, bushes, signs, items, swarms, zombies, planes, routePts, start: { ...N.S } };
@@ -190,7 +190,7 @@ function blocked(x, y, r) {
     const tr = world.buckets.get(i + ',' + j);
     if (tr && Math.hypot(tr.x - x, tr.y - y) < tr.r * 0.7 + r) return true;
   }
-  for (const p of world.planes) if (Math.hypot(p.x - x, p.y - y) < 36 + r) return true;
+  for (const p of world.planes) { if (Math.hypot(p.x - x, p.y - y) > 420) continue; for (const c of (p.solid || (p.solid = G.Planes.solid(p)))) if (Math.hypot(c.x - x, c.y - y) < c.r + r) return true; }
   return false;
 }
 
@@ -323,7 +323,7 @@ function update(dt) {
   // planes: walk up to one and climb in
   prompt = null;
   for (const p of world.planes) {
-    if (Math.hypot(p.x - me.x, p.y - me.y) > 125) continue;
+    if (Math.hypot(p.x - me.x, p.y - me.y) > 175) continue;
     if (!p.flyable) prompt = { text: `${p.reg} (${p.type}): ${p.why}`, plane: null };
     else if (taken[p.id]) prompt = { text: `Your rival already took ${p.reg}! Find the other one.`, plane: null };
     else prompt = { text: `Climb into ${p.reg} (${p.type})`, plane: p };
@@ -357,7 +357,7 @@ function attack() {
   me.attackReady = t + cfg.counterCooldown;
   me.attackAt = t;
   const dir = Math.atan2(me.diry, me.dirx);
-  let hits = 0;
+  let hits = 0, counters = 0;
   for (const z of world.zombies) {
     if (t < z.wake) continue;
     const d = Math.hypot(z.x - me.x, z.y - me.y);
@@ -367,6 +367,7 @@ function attack() {
     if (Math.abs(da) > w.cone && d > 40) continue;
     hits++;
     const countered = !!z.windup;
+    if (countered) counters++;
     z.windup = 0; z.cool = t + 1.5; z.stunUntil = t + w.stun;
     if (w.knock) { const a = Math.atan2(z.y - me.y, z.x - me.x); z.kx = Math.cos(a) * w.knock; z.ky = Math.sin(a) * w.knock; }
     pop(z.x, z.y - 80, countered ? 'COUNTERED!' : opts.char === 'kip' ? 'STUNNED' : 'WHACK!', countered ? '#7bed9f' : '#fff');
@@ -378,7 +379,8 @@ function attack() {
     else if (opts.char === 'wren') { S.burst(0, S.t, 0.18, 3500, 'highpass', 0.4); S.tone(0, S.t + 0.05, 0.25, 2600, 'triangle', 0.08, 1800); }
     else if (opts.char === 'ivy') { S.burst(0, S.t, 0.12, 1500, 'bandpass', 0.3); S.burst(0, S.t + 0.12, 0.04, 5000, 'highpass', 0.7); }
     else { S.burst(0, S.t, 0.2, 900, 'bandpass', 0.3); if (hits) S.tone(0, S.t + 0.1, 0.15, 110, 'sine', 0.5, 70); }
-    if (t - (me.lastAttackVoice || -9) > 4) { me.lastAttackVoice = t; S.playFile(`assets/voice/${opts.char}-attack.mp3`); }
+    // the character's line ("Get back!", "Not today!", "Sorry, little guy!", "Say cheese!") on a good counter, not every swing
+    if (counters && t - (me.lastAttackVoice ?? -99) > 10) { me.lastAttackVoice = t; S.playFile(`assets/voice/${opts.char}-attack.mp3`); }
   }
   if (opts.char === 'kip') me.flashAt = t;
   if (opts.char === 'elias' && hits) { pop(me.x, me.y - 110, '(fern ok)', '#9fd38a'); say(SORRY[Math.floor(Math.random() * SORRY.length)], '#9fd38a', 1.4); }
@@ -484,21 +486,7 @@ function stopSounds() { if (snd) { snd.nodes.forEach(n => { try { n.stop(); } ca
 const GROUND = ['#1c3521', '#6e5537', '#24485a', '#6b4b2b', '#3a5a2e', '#8b6a45'];
 function shadeCell(cx, cy) { return ((cx * 73856093) ^ (cy * 19349663)) % 7 / 7; }
 
-function drawPlane(p, s) {
-  ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(8, 10, 70, 22, 0, 0, TAU); ctx.fill();
-  if (!p.high) { ctx.fillStyle = p.color; ctx.fillRect(-8, -78, 30, 156); ctx.fillStyle = p.stripe; ctx.fillRect(-8, -78, 6, 156); }
-  ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.ellipse(0, 0, 62, 14, 0, 0, TAU); ctx.fill();          // fuselage
-  ctx.fillRect(-62, -26, 16, 52);                                               // tail
-  ctx.fillStyle = p.stripe; ctx.fillRect(-50, -3, 100, 6);
-  if (p.high) { ctx.fillStyle = p.color; ctx.fillRect(-6, -80, 30, 160); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.strokeRect(-6, -80, 30, 160); }
-  ctx.fillStyle = '#2c3e50'; ctx.fillRect(20, -8, 14, 16);                       // windshield
-  ctx.fillStyle = '#222'; ctx.fillRect(60, -16, 4, 32);                         // propeller
-  if (p.wreck) { ctx.fillStyle = 'rgba(40,30,20,0.45)'; ctx.beginPath(); ctx.ellipse(-10, 30, 26, 12, 0.4, 0, TAU); ctx.fill(); }
-  ctx.restore();
-  void s;
-}
+function drawPlane(p) { G.Planes.draw(ctx, p, t); }
 
 function drawCharacter(img, x, y, face, moving, step, alpha, hit) {
   const h = 76, bob = moving ? Math.abs(Math.sin(step * Math.PI)) * 6 : 0;
@@ -576,7 +564,7 @@ function draw() {
   const stand = [];
   const inView = (x, y, m) => x > camX - m && x < camX + W / zoom + m && y > camY - m && y < camY + H / zoom + m;
   for (const tr of world.trees) if (inView(tr.x, tr.y, 80)) stand.push({ y: tr.y, f: () => drawTree(tr) });
-  for (const p of world.planes) if (inView(p.x, p.y, 140)) stand.push({ y: p.y, f: () => drawPlane(p) });
+  for (const p of world.planes) if (inView(p.x, p.y, 320)) stand.push({ y: p.y - 260, f: () => drawPlane(p) });
   for (const z of world.zombies) if (t >= z.wake && inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => {
     ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, z.windup ? 0.86 : 1);
     G.drawZombie(ctx, 0, 0, 64, z, t, !!z.windup, 0); ctx.restore();
@@ -592,14 +580,15 @@ function draw() {
   if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('RIVAL', ghost.x, ghost.y - 86); } });
   stand.push({ y: me.y, f: () => drawCharacter(charImg(opts.char), me.x, me.y, me.face, me.moving, me.step, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
-  // plane registrations on top, so trees never hide them
-  ctx.font = '700 15px ui-monospace, Menlo, monospace'; ctx.textAlign = 'center';
-  for (const p of world.planes) {
-    if (!inView(p.x, p.y, 140)) continue;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(p.x - 40, p.y - 112, 80, 20);
-    ctx.fillStyle = p.flyable ? '#fff' : '#bbb'; ctx.fillText(p.reg, p.x, p.y - 97);
+  // Clear Skies only: a soft arrow over the planes that can still fly
+  if (opts.mode.planeHint && me.foundStrip) {
+    for (const p of world.planes) {
+      if (!p.flyable || taken[p.id] || !inView(p.x, p.y, 200)) continue;
+      const bob = Math.sin(t * 3) * 8;
+      ctx.fillStyle = 'rgba(123,237,159,0.55)';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - 150 + bob); ctx.lineTo(p.x - 18, p.y - 180 + bob); ctx.lineTo(p.x + 18, p.y - 180 + bob); ctx.fill();
+    }
   }
-
   drawAttack();
   for (const f of floats) {
     ctx.globalAlpha = Math.min(1, f.life * 1.5); ctx.fillStyle = f.color; ctx.font = '800 16px system-ui'; ctx.textAlign = 'center';

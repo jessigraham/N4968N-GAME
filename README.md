@@ -11,7 +11,7 @@ The game opens on the title screen. From there:
 1. **The story:** what happened on Kanoa Island, one line at a time (you can skip it).
 2. **Who are you?** Choose Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). You'll see their backstory and hear their line.
 3. **Your path:** grab your things in the lab tent or at the river camp, then **run for the airstrip**.
-4. **The jungle run.** Find the hidden airstrip (it moves every game). Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, walk up to a plane that can fly (the Cessna 172 N4968N or the Piper Cherokee N5512P) and climb in.
+4. **The jungle run.** Find the hidden airstrip (it moves every game). Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, find a plane that can fly: look for fuel cans by the nose, chocks already pulled, and an open key box. That's the Cessna 172 N4968N or the Piper Cherokee N5512P. The others are covered up, missing a propeller, on a flat tire, or shot full of holes. (On Clear Skies, a soft arrow points to the planes that fly.)
 5. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
 
 **On your own:** choose **Solo practice**.
@@ -106,6 +106,7 @@ Then visit http://localhost:8765 in your browser.
 - `intro.js` paints the island at dusk (sky, volcano, palms, fog, fireflies, film grain). The title, the story and the view out of the cockpit all share it.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
 - `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
+- `planes.js` draws the parked planes from above at real size (Cessna 172 and 150, Piper Cherokee, Piper Cub, Beechcraft Baron), with shadows, nav lights, stripes, chocks, tie-downs and fuel cans.
 - `hands.js` animates the character's hand reaching for each control, using the hand pictures in `assets/characters/`.
 - `assets/voice/` holds the recorded character lines (a female and a male voice).
 - `sound.js` makes the engine, starter, stall horn, bangs and groans with the browser's built-in audio.

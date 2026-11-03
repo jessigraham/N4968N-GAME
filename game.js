@@ -14,7 +14,7 @@ const MODES = G.MODES = {
     name: 'Clear Skies', tag: 'The fever’s still miles away.', color: '#5ec8e5',
     jungleClock: 300, cockpitClock: 120, penalty: 2, hintAfter: 0, cardHighlight: true,
     swarms: 5, swarmFever: 6, zombies: 6, zombieSpeed: 0.75, startAwake: 0.4, wave: 3, pour: 8,
-    smokeAfter: 20, signs: true, radio: 1.4,
+    smokeAfter: 20, signs: true, radio: 1.4, planeHint: true,
     // fighting back: seconds to react to a lunge, seconds between attacks, chance two lunge together
     counterWindow: 0.8, counterCooldown: 1, pairLunge: 0,
     // health: lost per bite, lost per second while the fever is 80%+, fever after respawning
