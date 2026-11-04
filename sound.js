@@ -178,7 +178,7 @@ const Sfx = G.Sfx = {
       this.tone(0, t0 + k * 0.5 + 0.16, 0.1, 58, 'sine', 0.5, 42);
     }
   },
-  // Recorded character lines: assets/voice/<voice>-<line>.mp3 (voice = female or male). Missing files stay silent.
+  // Recorded character lines: assets/voice/<voice>-<line>.mp3 (voice = the character id: ivy, wren, elias or kip). Missing files stay silent.
   voices: {},
   loadVoices(voice) {
     if (!this.ctx || this.voices[voice]) return;

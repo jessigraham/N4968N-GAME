@@ -553,7 +553,7 @@ function hurt(amount, loud) {
   // down: a short death beat, then wake at the last checkpoint. The clock keeps running.
   me.deadUntil = t + 2.6; me.respawnAt = t + 2.6; me.deaths = (me.deaths || 0) + 1;
   say('You were bitten…', '#ff6b6b', 2.6);
-  const v = G.CHARS && G.CHARS[opts.char] ? G.CHARS[opts.char].voice : 'female';
+  const v = G.CHARS && G.CHARS[opts.char] ? G.CHARS[opts.char].voice : 'ivy';
   G.Sfx.voice(v, 'whoa');
   if (opts.onBitten) opts.onBitten();
   void loud;

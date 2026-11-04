@@ -121,13 +121,13 @@ let lastSend = 0;
 
 // The four researchers you can play (all fictional). `path` picks the story path, `voice` the recorded lines.
 const CHARS = G.CHARS = {
-  ivy: { name: 'Dr. Ivy Thorne', short: 'Ivy', path: 'botanist', label: 'Botanist', voice: 'female',
+  ivy: { name: 'Dr. Ivy Thorne', short: 'Ivy', path: 'botanist', label: 'Botanist', voice: 'ivy',
     weapon: 'Vine Whip', icon: '🌿', weaponLine: 'A living strangler-fig vine that cracks out and snaps zombies back. Sometimes it grabs a tree and slingshots her forward.' },
-  wren: { name: 'Wren “Riptide” Calloway', short: 'Wren', path: 'safari', label: 'Jungle Explorer', voice: 'female',
+  wren: { name: 'Wren “Riptide” Calloway', short: 'Wren', path: 'safari', label: 'Jungle Explorer', voice: 'wren',
     weapon: 'Machete “Mildred”', icon: '🔪', weaponLine: 'A wide, flashing slash that sends them stumbling back.' },
-  elias: { name: 'Dr. Elias Fernsby', short: 'Elias', path: 'botanist', label: 'Botanist', voice: 'male',
+  elias: { name: 'Dr. Elias Fernsby', short: 'Elias', path: 'botanist', label: 'Botanist', voice: 'elias',
     weapon: 'The Fern', icon: '🪴', weaponLine: 'He swings his potted fern by the pot like a club. The fern is always fine. He always apologizes.' },
-  kip: { name: 'Kip “Compass” Monroe', short: 'Kip', path: 'safari', label: 'Jungle Explorer', voice: 'male',
+  kip: { name: 'Kip “Compass” Monroe', short: 'Kip', path: 'safari', label: 'Jungle Explorer', voice: 'kip',
     weapon: 'Camera Flash', icon: '📸', weaponLine: 'A blinding flash that freezes zombies in place for a couple of seconds.' },
 };
 const charName = c => (CHARS[c] || CHARS.ivy).name;
@@ -171,7 +171,7 @@ function newPlayer(slot) {
 
 function say(p, text, color = '#fff', dur = 2.5) { p.msg = text; p.msgT = raceT; p.msgDur = dur; p.msgColor = color; }
 
-// The player's character speaks (female or male recorded voice).
+// The player's character speaks (their own recorded voice).
 function speak(p, line, gap = 0) {
   if (p !== me || raceT - p.lastVoice < gap) return false;
   p.lastVoice = raceT;
