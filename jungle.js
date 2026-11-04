@@ -295,6 +295,7 @@ function update(dt) {
     if (!c.lit && Math.hypot(c.x - me.x, c.y - me.y) < 90) { c.lit = true; me.checkpoint = c; say('Checkpoint: the lantern is lit.', '#ffd970', 2); G.Sfx.click(); }
   }
   floats = floats.filter(f => (f.life -= dt) > 0);
+  botUpdate(dt);
 
   // pick things up
   for (const it of world.items) {
@@ -338,6 +339,74 @@ function update(dt) {
     me.lastSend = t;
     opts.onPos({ x: Math.round(me.x), y: Math.round(me.y), face: me.face, moving: me.moving });
   }
+}
+
+// ---------- The bot rival (Race a bot) ----------
+// It follows the trail toward the strip, sometimes wanders off the wrong way, fights zombies (and sometimes loses),
+// gets slowed by mosquitoes, goes down and wakes at a checkpoint, then takes the first free plane.
+let bot = null;
+function botUpdate(dt) {
+  const b = bot, cfg = opts.mode, route = world.routePts;
+  if (!b || b.boarded) return;
+  if (t < b.deadUntil) return;
+  if (b.respawn) {
+    b.respawn = false; b.health = 100;
+    const c = b.cp || world.checkpoints[0];
+    b.x = c.x; b.y = c.y;
+    let best = 0, bd = Infinity; route.forEach((q, i) => { const d = Math.hypot(q.x - c.x, q.y - c.y); if (d < bd) { bd = d; best = i; } });
+    b.i = best;
+  }
+  // where it's heading: a wrong turn, the next trail point, or a plane at the end
+  let tx, ty;
+  if (b.detour) { tx = b.detour.x; ty = b.detour.y; if (Math.hypot(tx - b.x, ty - b.y) < 25) b.detour = b.detour.back; }
+  else if (b.i < route.length) { tx = route[b.i].x; ty = route[b.i].y; if (Math.hypot(tx - b.x, ty - b.y) < 24) b.i += 2; }
+  else {
+    const plane = world.planes.find(p => p.flyable && !taken[p.id]);
+    if (!plane) return;
+    tx = plane.x + 110; ty = plane.y;
+    if (Math.hypot(tx - b.x, ty - b.y) < 30) {
+      b.boarded = true; taken[plane.id] = true; ghost = null;
+      say(`${G.CHARS[b.char].short} just climbed into ${plane.reg}!`, '#5ec8e5', 3);
+      if (opts.onBotBoard) opts.onBotBoard(plane.id, { time: t, deaths: b.deaths });
+      return;
+    }
+  }
+  if (!b.detour && b.i < route.length && Math.random() < cfg.botDetour * 0.05 * dt) {
+    // a wrong turn: wander off a few seconds into the trees, then come back
+    const a = Math.random() * TAU, r = 260 + Math.random() * 200;
+    b.detour = { x: b.x + Math.cos(a) * r, y: b.y + Math.sin(a) * r, back: { x: b.x, y: b.y, back: null } };
+  }
+  let sp = SPEED * cfg.botSpeed;
+  for (const s of world.swarms) if (s.cx !== undefined && Math.hypot(s.cx - b.x, s.cy - b.y) < s.r) sp *= 0.6;   // mosquitoes slow it
+  const d = Math.hypot(tx - b.x, ty - b.y) || 1;
+  b.x += (tx - b.x) / d * Math.min(d, sp * dt); b.y += (ty - b.y) / d * Math.min(d, sp * dt);
+  b.face = tx < b.x ? -1 : 1;
+  for (const c of world.checkpoints) if (Math.hypot(c.x - b.x, c.y - b.y) < 90) b.cp = c;
+  // zombies in its way: it swings, and sometimes misses
+  for (const z of world.zombies) {
+    if (t < z.wake || t < (z.stunUntil || 0) || t < (z.botCool || 0)) continue;
+    if (Math.hypot(z.x - b.x, z.y - b.y) > 70) continue;
+    z.botCool = t + 2.5;
+    if (Math.random() < cfg.botFight) {
+      z.stunUntil = t + 1.2; const a = Math.atan2(z.y - b.y, z.x - b.x); z.kx = Math.cos(a) * 500; z.ky = Math.sin(a) * 500;
+      pop(z.x, z.y - 80, 'WHACK!', '#5ec8e5');
+    } else {
+      b.health -= cfg.bite;
+      if (b.health <= 0) {
+        b.deaths++; b.deadUntil = t + 2.6; b.respawn = true;
+        say(`${G.CHARS[b.char].short} was bitten! Back to a checkpoint.`, '#5ec8e5', 2.5);
+      }
+    }
+  }
+  ghost = { x: b.x, y: b.y, face: b.face, moving: true, char: b.char };
+}
+// roughly how many seconds until the bot climbs into a plane (used when you board first)
+function botEta() {
+  const b = bot; if (!b) return null;
+  if (b.boarded) return 0;
+  let dist = 0, px = b.x, py = b.y;
+  for (let i = b.i; i < world.routePts.length; i += 4) { const q = world.routePts[i]; dist += Math.hypot(q.x - px, q.y - py); px = q.x; py = q.y; }
+  return dist / (SPEED * opts.mode.botSpeed) * (1.15 + Math.random() * 0.25) + 4 + Math.max(0, b.deadUntil - t);
 }
 
 // ---------- Fighting back ----------
@@ -577,7 +646,7 @@ function draw() {
     }
   } });
   for (const c of world.checkpoints) if (inView(c.x, c.y, 80)) stand.push({ y: c.y, f: () => drawLantern(c) });
-  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText('RIVAL', ghost.x, ghost.y - 86); } });
+  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(bot ? G.CHARS[ghost.char].short.toUpperCase() : 'RIVAL', ghost.x, ghost.y - 86); } });
   stand.push({ y: me.y, f: () => drawCharacter(charImg(opts.char), me.x, me.y, me.face, me.moving, me.step, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
   // Clear Skies only: a soft arrow over the planes that can still fly
@@ -835,7 +904,8 @@ G.Jungle = {
     me = { x: world.start.x, y: world.start.y, face: 1, dirx: 1, diry: 0, health: 100, attackReady: 0, attackAt: -9, flashAt: -9, deadUntil: 0, respawnAt: 0, checkpoint: null,
       step: 0, moving: false, stamina: 100, infection: 0, kx: 0, ky: 0,
       stunUntil: 0, outUntil: 0, sprayUntil: 0, hit: -9, hasMap: false, foundStrip: false };
-    ghost = null; taken = {}; floats = []; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
+    ghost = null; taken = {}; floats = [];
+    bot = o.bot ? { char: o.bot, x: world.start.x + 30, y: world.start.y + 10, i: 0, health: 100, deaths: 0, deadUntil: 0, face: 1, cp: null, boarded: false } : null; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
     showUI(true);
     ensureSounds();
     say('Find the hidden airstrip. Follow the trails, watch for signs.', '#ffd970', 4);
@@ -848,6 +918,8 @@ G.Jungle = {
   rivalArrived(secondsLeft) { deadline = t + secondsLeft; },
   notice(text, color) { if (running) say(text, color || '#5ec8e5', 2.5); },
   elapsed() { return t; },
+  botEta,
+  botStats() { return bot ? { time: t, deaths: bot.deaths } : null; },
   stats() { return { time: t, deaths: (me && me.deaths) || 0 }; },
   get running() { return running; },
   // for testing: where things are

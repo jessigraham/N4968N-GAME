@@ -172,6 +172,12 @@ const Sfx = G.Sfx = {
   },
 };
 
+// While the bot plays, its clicks and sputters stay silent (its engine is still heard, quietly).
+for (const k of ['click', 'dud', 'prime', 'sputter', 'caught', 'bang', 'groan', 'win', 'lose', 'shout']) {
+  const f = Sfx[k];
+  Sfx[k] = function (...a) { if (this.quiet) return; return f.apply(this, a); };
+}
+
 // One continuous engine + starter + stall-horn voice per plane. `level` makes the rival's engine quieter.
 G.EngineVoice = class EngineVoice {
   constructor(pan, level = 1) {

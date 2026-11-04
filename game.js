@@ -19,6 +19,9 @@ const MODES = G.MODES = {
     counterWindow: 0.8, counterCooldown: 1, pairLunge: 0,
     // health: lost per bite, lost per second while the fever is 80%+, fever after respawning
     bite: 25, feverDrain: 1.5, respawnFever: 30,
+    // the bot rival: jungle speed (1 = your running speed), chance of a wrong turn, seconds per cockpit action,
+    // chance of a cockpit mistake, chance of beating a zombie
+    botSpeed: 0.7, botDetour: 0.5, botStep: 1.7, botMistake: 0.3, botFight: 0.5,
   },
   medium: {
     name: 'Crosswind', tag: 'They’re closer than you think.', color: '#f5aa4a',
@@ -27,6 +30,7 @@ const MODES = G.MODES = {
     smokeAfter: 45, signs: true, radio: 1,
     counterWindow: 0.5, counterCooldown: 1.5, pairLunge: 0,
     bite: 34, feverDrain: 2.5, respawnFever: 30,
+    botSpeed: 0.85, botDetour: 0.3, botStep: 1.05, botMistake: 0.14, botFight: 0.7,
   },
   hard: {
     name: 'Mayday', tag: 'Patient zero is already at the airstrip.', color: '#ff5a4f',
@@ -35,6 +39,7 @@ const MODES = G.MODES = {
     smokeAfter: 90, signs: false, radio: 0.45,
     counterWindow: 0.3, counterCooldown: 2, pairLunge: 0.35,
     bite: 50, feverDrain: 4, respawnFever: 30,
+    botSpeed: 1.0, botDetour: 0.12, botStep: 0.6, botMistake: 0.04, botFight: 0.9,
   },
 };
 let modeKey = 'medium';
@@ -190,6 +195,7 @@ function gate(p, ctrl) {
 }
 
 function act(p, ctrl, arg) {
+  if (p.sim && G.reach) G.reach(p, ctrl, false);   // the bot's hand reaches too
   if (!gate(p, ctrl)) return false;
   apply(p, ctrl, arg);
   cascade(p);
@@ -338,7 +344,7 @@ function updateMe(p, dt) {
 
 function visuals(p, dt) {
   const target = p.running ? 650 + p.throttle * 1750 : p.cranking ? 180 : 0;
-  if (p === me) p.rpm += (target - p.rpm) * Math.min(1, dt * (p.running ? 3 : 1.5));
+  if (p === me || p.sim) p.rpm += (target - p.rpm) * Math.min(1, dt * (p.running ? 3 : 1.5));
   p.propAngle += p.rpm / 60 * Math.PI * 2 * dt;
   if (p.airborne) { p.alt += dt * 0.35; p.speed = Math.min(80, p.speed + dt * 3); }
   p.dist += p.speed * dt * 0.05;
@@ -394,11 +400,7 @@ Net.onMsg = m => {
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
-  else if (m.t === 'boarded') {
-    rivalBoardedAt = performance.now(); oppPlane = m.plane; if (m.jungle) oppJungle = m.jungle;
-    G.Jungle.markTaken(m.plane);
-    if (state === 'jungle') G.Jungle.rivalArrived(RACE_TIME + 3);
-  }
+  else if (m.t === 'boarded') rivalBoarded(m.plane, m.jungle);
   else if (m.t === 'pick') { oppChar = m.char; updateRival(); }
   else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
@@ -417,10 +419,11 @@ function startStory() {
   updateRival();
   G.Story.begin(pick => {
     pickChar(pick);
+    if (mode === 'bot') pickBot();
     if (mode === 'online') Net.send({ t: 'pick', char: pick });
   }, () => {
     if (mode === 'online' && !Net.connected()) mode = 'solo';   // rival left during the story
-    if (mode === 'solo') { startJungle(Math.floor(Math.random() * 1e9)); return; }
+    if (mode === 'solo' || mode === 'bot') { startJungle(Math.floor(Math.random() * 1e9)); return; }
     ready.me = true;
     Net.send({ t: 'ready', char: myChar });
     showScreen('airstrip');
@@ -428,8 +431,18 @@ function startStory() {
     maybeStart();
   });
 }
+function pickBot() {   // one of the three researchers you didn't pick
+  const others = Object.keys(CHARS).filter(c => c !== myChar);
+  oppChar = others[Math.floor(Math.random() * others.length)];
+  updateRival();
+}
 function updateRival() {
   const chip = $('#rivalChip');
+  if (mode === 'bot') {
+    chip.classList.toggle('hidden', state !== 'menu' || !oppChar);
+    if (oppChar) chip.innerHTML = `<img src="assets/characters/${oppChar}.png" alt="" style="height:28px;vertical-align:middle;margin:-6px 4px -6px -4px">Your rival: <b>${CHARS[oppChar].name}</b> · ${CHARS[oppChar].icon} ${CHARS[oppChar].weapon}`;
+    return;
+  }
   chip.classList.toggle('hidden', mode !== 'online' || state !== 'menu');
   if (oppGone) { chip.textContent = 'Your rival left'; return; }
   const who = oppChar ? CHARS[oppChar].name : null;
@@ -445,10 +458,16 @@ function maybeStart() {
 }
 
 // ---------- The jungle run: find the airstrip, then climb into a plane ----------
-let rivalBoardedAt = null, oppPlane = null;
+// your rival (online player or bot) climbed into a plane: their cockpit clock is now running
+function rivalBoarded(plane, jungle) {
+  rivalBoardedAt = performance.now(); oppPlane = plane; if (jungle) oppJungle = jungle;
+  G.Jungle.markTaken(plane);
+  if (state === 'jungle') G.Jungle.rivalArrived(RACE_TIME + 3);
+}
+let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0;
 function startJungle(seed) {
   rivalBoardedAt = null; oppPlane = null;
-  myJungle = { time: 0, deaths: 0 }; oppJungle = { time: 0, deaths: 0 };
+  myJungle = { time: 0, deaths: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
   wantAgain = { me: false, them: false }; againMsg = '';
   hideEnding();
   state = 'jungle';
@@ -464,8 +483,12 @@ function startJungle(seed) {
     seed, char: myChar, mode: M(),
     onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
     onBitten: mode === 'online' ? () => Net.send({ t: 'bitten' }) : null,
+    bot: mode === 'bot' ? oppChar : null,
+    onBotBoard: mode === 'bot' ? (plane, jungle) => rivalBoarded(plane, jungle) : null,
     onBoard: plane => {
       myJungle = G.Jungle.stats();
+      botArrives = mode === 'bot' && rivalBoardedAt === null ? G.Jungle.botEta() : null;
+      if (botArrives !== null) botJungleDeaths = (G.Jungle.botStats() || {}).deaths || 0;
       if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id, jungle: myJungle });
       // if your rival got there first, their race clock is already running
       const offset = rivalBoardedAt === null ? 0 : (performance.now() - rivalBoardedAt) / 1000 - 3;
@@ -645,7 +668,7 @@ function beginRace(o = {}) {
   me = newPlayer(mySlot);
   me.char = myChar;
   Sfx.loadVoices(CHARS[myChar].voice);
-  opp = mode === 'online' ? newPlayer(1 - mySlot) : null;
+  opp = mode === 'online' || mode === 'bot' ? newPlayer(1 - mySlot) : null;
   oppGone = false;
   wantAgain = { me: false, them: false };
   if (Sfx.ctx) {
@@ -671,8 +694,61 @@ function beginRace(o = {}) {
     state = 'race'; raceT = Math.min(RACE_TIME, o.offset);
     say(me, `Your rival got here ${Math.round(o.offset + 3)}s ahead of you. Hurry!`, '#ff9f43', 3);
   }
+  if (mode === 'bot' && opp) {
+    if (oppPlane) {
+      startBot();
+      if (raceT > 0) {   // the bot has been working its checklist while you were still in the jungle
+        const end = raceT, keep = state; state = 'race';
+        opp.botWait = 1.2;
+        for (let tt = 0; tt < end && !opp.done; tt += 0.05) { raceT = tt; botStep(0.05); }
+        raceT = end; state = keep;
+      }
+    } else if (botArrives === null) botArrives = RACE_TIME + 999;   // never boards (rematch from the card)
+  }
   G.Story.stop(); updateRival();
   fitAll();
+}
+
+// ---------- The bot in the cockpit: works the checklist like a person, with mistakes by mode ----------
+function startBot() {
+  if (!opp || opp.sim) return;
+  opp.sim = true;
+  if (!oppPlane) oppPlane = me.reg === 'N4968N' ? 'piper' : 'c172';
+  opp.reg = PLANES[oppPlane]; opp.planeType = oppPlane === 'piper' ? 'cherokee' : 'c172';
+  opp.botWait = raceT + 1.2;
+  opp.primeTarget = 2 + (Math.random() < 0.5 ? 1 : 0);
+  $('#oppName').textContent = charName(opp.char) + ' · ' + opp.reg;
+}
+function botStep(dt) {
+  Sfx.quiet = true;
+  try { botThink(opp); updateMe(opp, dt); } finally { Sfx.quiet = false; }
+}
+function botThink(p) {
+  const cfg = M();
+  if (p.done || state !== 'race' || raceT < p.lockUntil) return;
+  const id = STEPS[p.step] && STEPS[p.step].id;
+  if (STEPS.findIndex(s => s.id === 'full') > p.step) { p.hold.thrUp = false; p.hold.yoke = false; }   // after an engine quit
+  if (id !== 'start') p.hold.key = false;
+  if (raceT < (p.botWait || 0)) return;
+  const wait = k => { p.botWait = raceT + cfg.botStep * k * (0.6 + Math.random() * 0.8); };
+  const slip = () => Math.random() < cfg.botMistake;
+  switch (id) {
+    case 'master': if (slip() && !p.slipped) { p.slipped = true; act(p, 'beacon'); } else act(p, 'master'); wait(1); break;   // out of order: sputter
+    case 'fuel': if (slip() && !p.skipFuel) { p.skipFuel = true; act(p, 'mixture', true); } else act(p, 'fuel'); wait(1); break;  // forgets BOTH
+    case 'mixture': act(p, 'mixture', true); wait(1); break;
+    case 'crack': act(p, 'throttle', p.throttle > 0.25 ? { set: 0.12 } : { delta: 0.1 }); wait(1); break;
+    case 'prime':
+      if (p.primeTarget < 4 && slip() && !p.overPrimed) { p.overPrimed = true; p.primeTarget = 4; }            // over-primes and floods
+      if (p.strokes < p.primeTarget) { act(p, 'prime'); wait(0.4); } else { act(p, 'beacon'); wait(1); }
+      break;
+    case 'beacon': if (p.overPrimed && p.strokes < 4) { act(p, 'prime'); wait(0.4); } else { act(p, 'beacon'); wait(1); } break;   // one stroke too many floods it
+    case 'clear': act(p, 'clear'); wait(1); break;
+    case 'start': if (raceT < p.floodUntil) p.hold.key = false; else if (!p.hold.key && act(p, 'key')) p.hold.key = true; break;
+    case 'oil': if (p.oil >= 0.8) { act(p, 'oil'); wait(0.8); } break;
+    case 'flaps': act(p, 'flaps'); wait(1); break;
+    case 'full': if (!p.hold.thrUp && act(p, 'throttle', { delta: 0.1 })) { p.hold.thrUp = true; p.holdT.thrUp = raceT; } break;
+    case 'rotate': if (p.speed >= VR[p.flaps] + 1 && !p.hold.yoke && act(p, 'yoke')) p.hold.yoke = true; break;
+  }
 }
 
 // ---------- The ending: fly-out over the island, then the winner card ----------
@@ -771,6 +847,7 @@ function toMenu() {
 }
 
 $('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'solo'; startStory(); });
+$('#goBot').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'bot'; startStory(); });
 $('#goInvite').addEventListener('click', () => {
   Sfx.init(); mode = 'online';
   $('#inviteCode').textContent = '····'; $('#inviteLink').value = '';
@@ -797,7 +874,7 @@ $('#shareBtn').addEventListener('click', () => {
   navigator.share({ title: 'N4968N cockpit race', text: `Race me off the zombie island! Code ${Net.code}`, url: link }).catch(() => {});
 });
 $('#again').addEventListener('click', () => {
-  if (mode === 'solo') { startJungle(Math.floor(Math.random() * 1e9)); return; }
+  if (mode === 'solo' || mode === 'bot') { startJungle(Math.floor(Math.random() * 1e9)); return; }
   wantAgain.me = true; Net.send({ t: 'again' });
   againMsg = wantAgain.them ? 'Starting…' : 'Waiting for your rival to press Fly again…';
   $('#resStatus').textContent = againMsg;
@@ -809,7 +886,7 @@ $('#changeChar').addEventListener('click', () => {
   state = 'menu';
   document.body.classList.remove('playing');
   $('#quitBtn').classList.add('hidden');
-  G.Story.chooseAgain(pickChar, () => startJungle(Math.floor(Math.random() * 1e9)));
+  G.Story.chooseAgain(c => { pickChar(c); if (mode === 'bot') pickBot(); }, () => startJungle(Math.floor(Math.random() * 1e9)));
 });
 $('#toMenu').addEventListener('click', toMenu);
 $('#quitBtn').addEventListener('click', toMenu);
@@ -844,12 +921,16 @@ function step(dt, now) {
         sendSnapshot();
       }
       // an online rival who stopped sending past the deadline counts as overrun
-      if (opp && !opp.done && raceT >= RACE_TIME && !Net.connected()) opp.done = true;
+      if (opp && !opp.done && raceT >= RACE_TIME && !Net.connected()) { opp.done = true; if (mode === 'bot') opp.overrun = true; }
     } else state = 'end';
     if (me.done && !endingShown) startEnding();
   }
   if (me && (state === 'race' || state === 'end')) updateMe(me, dt);
-  if (opp && (state === 'race' || state === 'end')) visuals(opp, dt);
+  if (opp && mode === 'bot' && state === 'race' && !opp.sim && botArrives !== null && raceT >= botArrives) {
+    startBot(); oppJungle = { time: myJungle.time + botArrives, deaths: botJungleDeaths };
+  }
+  if (opp && opp.sim && (state === 'race' || state === 'end')) botStep(dt);
+  else if (opp && (state === 'race' || state === 'end')) visuals(opp, dt);
 }
 
 let last = performance.now();

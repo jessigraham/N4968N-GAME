@@ -16,6 +16,8 @@ The game opens on the title screen. From there:
 
 **On your own:** choose **Solo practice**.
 
+**Against a bot:** choose **Race a bot**. One of the three researchers you didn't pick races you the whole way: through the jungle (it takes the occasional wrong turn, fights zombies with its own weapon, and can get bitten and wake at a checkpoint), into whichever plane it reaches first, and through its own checklist, making mistakes like a real pilot. On Clear Skies it's slow and clumsy, on Crosswind it's an even match, and on Mayday it's fast and sharp. You can watch its cockpit live in the corner.
+
 **Against a friend on another device:**
 1. Choose **Invite a player**. You get a 4-letter code and a link.
 2. Send the link (Copy or Share) to your friend's phone or computer, or read them the code.
