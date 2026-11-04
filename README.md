@@ -11,7 +11,7 @@ The game opens on the title screen. From there:
 1. **The story:** what happened on Kanoa Island, one line at a time (you can skip it).
 2. **Who are you?** Choose Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). You'll see their backstory and hear their line.
 3. **Your path:** grab your things in the lab tent or at the river camp, then **run for the airstrip**.
-4. **The jungle run.** Find the hidden airstrip (it moves every game). Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, find a plane that can fly: look for fuel cans by the nose, chocks already pulled, and an open key box. That's the Cessna 172 N4968N or the Piper Cherokee N5512P. The others are covered up, missing a propeller, on a flat tire, or shot full of holes. (On Clear Skies, a soft arrow points to the planes that fly.)
+4. **The jungle run.** Every game is a brand-new island: the camp, the airstrip (where it is and which way it points), the river and its bridges, and the trails with their dead ends and loops all change, so you can't memorize the way. Find the hidden airstrip. Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, find a plane that can fly: look for fuel cans by the nose, chocks already pulled, and an open key box. That's the Cessna 172 N4968N or the Piper Cherokee N5512P. The others are covered up, missing a propeller, on a flat tire, or shot full of holes. (On Clear Skies, a soft arrow points to the planes that fly.)
 5. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
 
 **On your own:** choose **Solo practice**.
@@ -36,6 +36,10 @@ When you lift off, the view pulls back over the island as your plane climbs past
 - **Kip "Compass" Monroe:** "Finally. A direction I'm sure of. Up."
 
 Online, both players see who won. If you didn't make it, the winner's card appears over your cockpit, with the zombies at the glass. **Fly again** runs the whole jungle and cockpit again. **Change researcher** (solo) lets you pick someone else.
+
+### Sharing a map
+
+The winner card shows the island's map code (like **Map KANOA-6ZJTN4**). **Copy map link** gives you a link that opens that exact island, so a friend can race the same jungle.
 
 ### Three ways to play
 

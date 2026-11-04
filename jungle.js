@@ -19,7 +19,20 @@ function rng(seed) {   // small seeded random generator (mulberry32)
 }
 
 // ---------- Making the island ----------
-function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock: 210, startAwake: 0.6 }) {
+// Every game is a new jungle: the camp, the airstrip (where it is and which way it points), the river and its
+// bridges, the trail network with its branches, loops and dead ends, and where the clues and dangers are all come
+// from the seed. Online, the host sends the seed so both players get the same island.
+const STRIP_W = 1500, STRIP_H = 210;
+function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock: 210, startAwake: 0.6, routeRange: [2800, 5400] }) {
+  // try seeds until the island is fair: reachable, and a route that's neither trivial nor endless
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const w = tryIsland((seed + attempt * 7919) >>> 0, cfg);
+    if (w) { w.seed = seed; w.attempts = attempt + 1; return w; }
+  }
+  return tryIsland(seed, { ...cfg, routeRange: [0, 1e9] }, true);
+}
+
+function tryIsland(seed, cfg, lenient) {
   const R = rng(seed);
   const grid = new Uint8Array(GW * GH);   // all dense undergrowth to start
   const at = (cx, cy) => (cx < 0 || cy < 0 || cx >= GW || cy >= GH) ? -1 : grid[cy * GW + cx];
@@ -35,119 +48,166 @@ function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock
       }
     }
   };
+  const inMap = (p, m = 260) => ({ x: clamp(p.x, m, MW - m), y: clamp(p.y, m, MH - m) });
+  const cxm = MW / 2, cym = MH / 2;
 
-  // the river winding across the middle of the island
-  const ph = R() * TAU;
-  const riverY = x => 1380 + 210 * Math.sin(x / 520 + ph) + 70 * Math.sin(x / 170 + ph * 2);
-  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
-    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
-    if (Math.abs(y - riverY(x)) < 72) grid[cy * GW + cx] = T.WATER;
+  // the camp and the airstrip, on opposite sides of the island
+  const th = R() * TAU;
+  const ring = (a, k) => inMap({ x: cxm + Math.cos(a) * MW * 0.4 * k, y: cym + Math.sin(a) * MH * 0.38 * k }, 300);
+  const start = ring(th, 0.9 + R() * 0.15);
+  const ang = (R() - 0.5) * 0.9;                       // which way the strip points
+  const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux;
+  // keep the whole strip clearing (with room to park) on the island
+  const hx = Math.abs(ux) * 850 + Math.abs(vx) * 480, hy = Math.abs(uy) * 850 + Math.abs(vy) * 480;
+  const sr = ring(th + Math.PI + (R() - 0.5) * 0.9, 0.8 + R() * 0.2);
+  const sc = { x: clamp(sr.x, hx + 40, MW - hx - 40), y: clamp(sr.y, hy + 40, MH - hy - 40) };
+  if (!lenient && dist(start, sc) < 0.45 * Math.hypot(MW, MH)) return null;
+  const toWorld = (lx, ly) => ({ x: sc.x + ux * lx + vx * ly, y: sc.y + uy * lx + vy * ly });
+  const toLocal = (x, y) => ({ lx: (x - sc.x) * ux + (y - sc.y) * uy, ly: (x - sc.x) * vx + (y - sc.y) * vy });
+
+  // the river, winding across the middle one way or the other
+  // it runs between the camp and the strip, so the way there crosses it
+  const vertical = Math.abs(sc.x - start.x) > Math.abs(sc.y - start.y), ph = R() * TAU;
+  const off = (vertical ? (start.x + sc.x) / 2 - cxm : (start.y + sc.y) / 2 - cym) + (R() - 0.5) * 240;
+  const riverAt = s => vertical ? cxm + off + 220 * Math.sin(s / 520 + ph) + 70 * Math.sin(s / 170 + ph * 2)
+    : cym + off + 210 * Math.sin(s / 520 + ph) + 70 * Math.sin(s / 170 + ph * 2);
+  const riverOff = (x, y) => vertical ? x - riverAt(y) : y - riverAt(x);   // signed distance-ish from the river
+  if (!lenient && Math.abs(riverOff(start.x, start.y)) < 320) return null;
+  if (!lenient) for (let lx = -800; lx <= 800; lx += 200) for (const ly of [-460, 0, 460]) {
+    const c = toWorld(lx, ly); if (Math.abs(riverOff(c.x, c.y)) < 110) return null;
   }
-  const bridges = [650 + R() * 450, 2350 + R() * 600].map(x => ({ x, y: riverY(x) }));
-  for (const b of bridges) for (let y = b.y - 110; y <= b.y + 110; y += 20) paint(b.x, y, 44, T.BRIDGE);
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+    if (Math.abs(riverOff(cx * CELL + CELL / 2, cy * CELL + CELL / 2)) < 72) grid[cy * GW + cx] = T.WATER;
+  }
+  const riverPts = [];
+  for (let s = 0; s <= (vertical ? MH : MW); s += 100) riverPts.push(vertical ? { x: riverAt(s), y: s } : { x: s, y: riverAt(s) });
 
-  // where things are: the camp, junctions, and the four places the airstrip might be
-  const N = {
-    S: { x: 280, y: 2540 },
-    B1s: { x: bridges[0].x, y: bridges[0].y + 130 }, B1n: { x: bridges[0].x, y: bridges[0].y - 130 },
-    B2s: { x: bridges[1].x, y: bridges[1].y + 130 }, B2n: { x: bridges[1].x, y: bridges[1].y - 130 },
-    J1: { x: 950 + R() * 150, y: 850 + R() * 120 }, J2: { x: 2600 + R() * 150, y: 880 + R() * 120 },
-    J3: { x: 1750 + R() * 200, y: 2250 + R() * 120 },
-    P0: { x: 2950, y: 420 }, P1: { x: 760, y: 380 }, P2: { x: 3020, y: 2120 }, P3: { x: 1820, y: 340 },
-  };
-  const EDGES = [['S', 'B1s'], ['B1s', 'B1n'], ['B1n', 'J1'], ['J1', 'P1'], ['J1', 'P3'], ['J1', 'J2'],
-    ['S', 'J3'], ['J3', 'B2s'], ['B2s', 'B2n'], ['B2n', 'J2'], ['J2', 'P0'], ['J3', 'P2'], ['J2', 'P3']];
-  const spots = ['P0', 'P1', 'P2', 'P3'];
-  const stripKey = spots[Math.floor(R() * spots.length)];
-  const strip = N[stripKey];
-
-  // trails between them, wobbling through the trees
-  const trailPts = [];
-  for (const [a, b] of EDGES) {
-    const A = N[a], B = N[b], len = dist(A, B), n = Math.max(2, Math.round(len / 110));
-    const nx = -(B.y - A.y) / len, ny = (B.x - A.x) / len;
-    let prev = A;
-    for (let k = 1; k <= n; k++) {
-      const q = k / n, wob = k === n ? 0 : (R() - 0.5) * 120 * Math.sin(q * Math.PI);
-      const p = { x: A.x + (B.x - A.x) * q + nx * wob, y: A.y + (B.y - A.y) * q + ny * wob };
+  // the main trail: from camp through a few winding waypoints to the near end of the strip
+  const endA = toWorld(-(STRIP_W / 2 + 140), 0), endB = toWorld(STRIP_W / 2 + 140, 0);
+  const end = dist(endA, start) < dist(endB, start) ? endA : endB;
+  const n = 3 + Math.floor(R() * 2), main = [start];
+  const dx = end.x - start.x, dy = end.y - start.y, len = Math.hypot(dx, dy), px = -dy / len, py = dx / len;
+  for (let k = 1; k <= n; k++) {
+    const q = k / (n + 1), side = (R() - 0.5) * 1300;
+    main.push(inMap({ x: start.x + dx * q + px * side, y: start.y + dy * q + py * side }));
+  }
+  main.push(end);
+  // branches: dead ends to empty clearings, and loops back onto the main trail
+  const edges = [], decoys = [];
+  for (let k = 0; k < main.length - 1; k++) edges.push({ a: main[k], b: main[k + 1], main: true, id: 'm' + k });
+  const nb = 3 + Math.floor(R() * 3);
+  for (let k = 0; k < nb; k++) {
+    const from = main[1 + Math.floor(R() * (main.length - 2))];
+    const a = R() * TAU, r = 650 + R() * 700;
+    const to = inMap({ x: from.x + Math.cos(a) * r, y: from.y + Math.sin(a) * r }, 320);
+    if (dist(to, sc) < 900) continue;   // branches never sneak up on the strip
+    edges.push({ a: from, b: to, main: false, id: 'b' + k });
+    if (R() < 0.35) { const back = main[1 + Math.floor(R() * (main.length - 2))]; if (back !== from) edges.push({ a: to, b: back, main: false, id: 'l' + k }); }
+    else decoys.push(to);
+  }
+  // carve the trails, wobbling through the trees; the main trail in order is the real route
+  const trailPts = [], routePts = [], edgePts = [];
+  for (const e of edges) {
+    const L = dist(e.a, e.b), m = Math.max(2, Math.round(L / 110)), nx = -(e.b.y - e.a.y) / L, ny = (e.b.x - e.a.x) / L;
+    const pts = [];
+    let prev = e.a;
+    for (let k = 1; k <= m; k++) {
+      const q = k / m, wob = k === m ? 0 : (R() - 0.5) * 120 * Math.sin(q * Math.PI);
+      const p = { x: e.a.x + (e.b.x - e.a.x) * q + nx * wob, y: e.a.y + (e.b.y - e.a.y) * q + ny * wob };
       const d = dist(prev, p);
-      for (let s = 0; s <= d; s += 16) {
-        const x = prev.x + (p.x - prev.x) * s / d, y = prev.y + (p.y - prev.y) * s / d;
-        paint(x, y, 44, T.TRAIL, true);
-        trailPts.push({ x, y, edge: a + '-' + b });
-      }
+      for (let s2 = 0; s2 <= d; s2 += 16) pts.push({ x: prev.x + (p.x - prev.x) * s2 / d, y: prev.y + (p.y - prev.y) * s2 / d, edge: e.id });
       prev = p;
     }
+    edgePts.push([e, pts]);
   }
-  paint(N.S.x, N.S.y, 150, T.CLEAR);
-  for (const k of spots) if (k !== stripKey) paint(N[k].x, N[k].y, 230, T.CLEAR);
-  // the airstrip itself: a long dirt clearing
-  // a long dirt strip with room to park real-size planes on both sides
-  const SW = 1500, SH = 210;
-  strip.w = SW; strip.h = SH;
-  const sx0 = clamp(strip.x - SW / 2, 60, MW - SW - 60), sy0 = clamp(strip.y - SH / 2, 470, MH - SH - 480);
-  strip.x0 = sx0; strip.y0 = sy0; strip.cx = sx0 + SW / 2; strip.cy = sy0 + SH / 2;
-  for (let y = sy0 - 450; y <= sy0 + SH + 450; y += 20) for (let x = sx0 - 60; x <= sx0 + SW + 60; x += 20) paint(x, y, 22, T.CLEAR);
-  for (let y = sy0; y <= sy0 + SH; y += 20) for (let x = sx0; x <= sx0 + SW; x += 20) paint(x, y, 16, T.STRIP);
+  // bridges exactly where a trail crosses the river, laid along the trail: always on the main trail
+  // (1 or 2 crossings), sometimes on a branch (otherwise that branch just ends at the water)
+  const bridges = [];
+  let mainCross = 0;
+  for (const [e, pts] of edgePts) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = Math.sign(riverOff(pts[i - 1].x, pts[i - 1].y)), b = Math.sign(riverOff(pts[i].x, pts[i].y));
+      if (a === b || !a || !b) continue;
+      if (e.main) mainCross++;
+      if (!e.main && !(bridges.length < 3 && R() < 0.5)) continue;
+      const p0 = pts[Math.max(0, i - 3)], p1 = pts[Math.min(pts.length - 1, i + 3)], L = dist(p0, p1) || 1;
+      const ex = (p1.x - p0.x) / L, ey = (p1.y - p0.y) / L;
+      for (let s2 = -170; s2 <= 170; s2 += 16) paint(pts[i].x + ex * s2, pts[i].y + ey * s2, 46, T.BRIDGE);
+      bridges.push({ x: pts[i].x, y: pts[i].y });
+    }
+  }
+  if (!lenient && mainCross > 2) return null;
+  // wherever the main trail still touches water, lay boardwalk planks so the real route is never cut off
+  for (const [e, pts] of edgePts) if (e.main) for (const pt of pts) {
+    if (at(Math.floor(pt.x / CELL), Math.floor(pt.y / CELL)) === T.WATER) paint(pt.x, pt.y, 46, T.BRIDGE);
+  }
+  for (const [e, pts] of edgePts) for (const pt of pts) { paint(pt.x, pt.y, 44, T.TRAIL, true); trailPts.push(pt); if (e.main) routePts.push(pt); }
 
-  // trees and bushes in the undergrowth
+  // the route must stay a fair length for the mode
+  let routeLen = 0;
+  for (let i = 1; i < routePts.length; i++) routeLen += dist(routePts[i - 1], routePts[i]);
+  const [lo, hi] = cfg.routeRange || [0, 1e9];
+  if (routeLen < lo || routeLen > hi) return null;
+
+  // clearings: the camp, the dead ends, and the airstrip with its parking area
+  paint(start.x, start.y, 150, T.CLEAR);
+  for (const d of decoys) paint(d.x, d.y, 220, T.CLEAR);
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
+    const { lx, ly } = toLocal(cx * CELL + CELL / 2, cy * CELL + CELL / 2);
+    if (Math.abs(lx) > STRIP_W / 2 + 70 || Math.abs(ly) > STRIP_H / 2 + 450) continue;
+    const i = cy * GW + cx;
+    if (grid[i] === T.WATER) continue;
+    grid[i] = Math.abs(lx) < STRIP_W / 2 && Math.abs(ly) < STRIP_H / 2 ? T.STRIP : T.CLEAR;
+  }
+  const strip = {
+    cx: sc.x, cy: sc.y, ang, w: STRIP_W, h: STRIP_H, toWorld, toLocal,
+    contains(x, y, mx = 0, my = 0) { const l = toLocal(x, y); return Math.abs(l.lx) < STRIP_W / 2 + mx && Math.abs(l.ly) < STRIP_H / 2 + my; },
+  };
+
+  // trees and bushes in the undergrowth, kept a cell back from trails and clearings
   const trees = [], bushes = [], buckets = new Map();
   for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) {
-    if (grid[cy * GW + cx] !== T.BRUSH) { continue; }
+    if (grid[cy * GW + cx] !== T.BRUSH) continue;
     const x = cx * CELL + CELL / 2 + (R() - 0.5) * 20, y = cy * CELL + CELL / 2 + (R() - 0.5) * 20;
-    // trees only where the undergrowth is all around, so trails and clearings stay open
     let open = false;
-    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const n = at(cx + i, cy + j); if (n !== T.BRUSH && n !== -1) open = true; }
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const nn = at(cx + i, cy + j); if (nn !== T.BRUSH && nn !== -1) open = true; }
     if (!open && R() < 0.55) {
       const tr = { x, y, r: 14 + R() * 12, crown: 30 + R() * 26, hue: R(), palm: R() < 0.25 };
-      trees.push(tr);
-      const key = cx + ',' + cy; buckets.set(key, tr);
+      trees.push(tr); buckets.set(cx + ',' + cy, tr);
     } else if (R() < 0.6) bushes.push({ x, y, r: 12 + R() * 14, hue: R() });
   }
 
-  // a sign at each junction pointing the right way to the strip
-  const adj = {};
-  for (const [a, b] of EDGES) { (adj[a] = adj[a] || []).push(b); (adj[b] = adj[b] || []).push(a); }
-  const nextToward = (from, goal) => {
-    const prev = { [from]: null }, q = [from];
-    while (q.length) { const n = q.shift(); if (n === goal) break; for (const m of adj[n] || []) if (!(m in prev)) { prev[m] = n; q.push(m); } }
-    let n = goal; while (prev[n] && prev[n] !== from) n = prev[n];
-    return N[n];
-  };
-  const signs = (cfg.signs ? ['J1', 'J2', 'J3'] : []).map((k, i) => {
-    const to = nextToward(k, stripKey), j = N[k];
-    const a = Math.atan2(to.y - j.y, to.x - j.x);
-    return { x: j.x + Math.cos(a + 0.9) * 60, y: j.y + Math.sin(a + 0.9) * 60, angle: a, broken: i === Math.floor(R() * 3) };
-  });
+  // checkpoint lanterns along the real route, and trail signs where the trail splits
+  const along = q => routePts[Math.min(routePts.length - 1, Math.floor(routePts.length * q))];
+  const checkpoints = [{ ...start, lit: true, camp: true }, ...[0.3, 0.55, 0.8].map(q => { const p = along(q); return { x: p.x + 50, y: p.y - 50, lit: false }; })];
+  const signs = [];
+  if (cfg.signs) {
+    const forks = main.slice(1, -1).filter(m => edges.some(e => !e.main && (e.a === m || e.b === m)));
+    const broken = Math.floor(R() * Math.max(1, forks.length));
+    forks.forEach((m, i) => {
+      const nxt = main[main.indexOf(m) + 1], a = Math.atan2(nxt.y - m.y, nxt.x - m.x);
+      signs.push({ x: m.x + Math.cos(a + 0.9) * 60, y: m.y + Math.sin(a + 0.9) * 60, angle: a, broken: i === broken && forks.length > 1 });
+    });
+  }
 
-  // pickups along the trails
-  const trailOn = edge => trailPts.filter(p => p.edge === edge);
-  const pathEdges = [];
-  const routePts = [];   // the trail from camp to the strip, in order (used for testing)
-  { let n = 'S'; let guard = 0; while (n !== stripKey && guard++ < 20) {
-    const nx = Object.keys(N).find(k => N[k] === nextToward(n, stripKey)); pathEdges.push(n + '-' + nx, nx + '-' + n);
-    const fwd = trailOn(n + '-' + nx), back = trailOn(nx + '-' + n).reverse();
-    routePts.push(...(fwd.length ? fwd : back));
-    n = nx;
-  } }
-  const onPath = trailPts.filter(p => pathEdges.includes(p.edge));
+  // clues and supplies on the trails
   const pick = arr => arr[Math.floor(R() * arr.length)];
   const items = [];
-  const mapAt = onPath.length ? onPath[Math.floor(onPath.length * (0.35 + R() * 0.2))] : pick(trailPts);
-  items.push({ kind: 'map', x: mapAt.x, y: mapAt.y });
+  const mp = along(0.35 + R() * 0.2);
+  items.push({ kind: 'map', x: mp.x, y: mp.y });
   for (let i = 0; i < 4; i++) { const p = pick(trailPts); items.push({ kind: 'spray', x: p.x, y: p.y }); }
   for (let i = 0; i < 3; i++) { const p = pick(trailPts); items.push({ kind: 'med', x: p.x, y: p.y }); }
 
-  // mosquito swarms by the water, zombies on the trails
+  // mosquitoes along the river, zombies out on the trails
   const swarms = [];
   for (let i = 0; i < cfg.swarms; i++) {
-    const x = 200 + R() * (MW - 400);
-    swarms.push({ x, y: riverY(x) + (R() - 0.5) * 420, ph: R() * TAU, r: 85 + R() * 30 });
+    const rp = pick(riverPts);
+    swarms.push({ x: rp.x + (R() - 0.5) * 420, y: rp.y + (R() - 0.5) * 420, ph: R() * TAU, r: 85 + R() * 30 });
   }
   const zombies = [];
+  const far = trailPts.filter(p => dist(p, start) > 800);
   for (let i = 0; i < cfg.zombies; i++) {
-    let p; do { p = pick(trailPts); } while (dist(p, N.S) < 800);
-    // some are already out on the trails; the rest trickle in during the first half of the jungle clock
+    const p = pick(far.length ? far : trailPts);
     const wake = i < cfg.zombies * cfg.startAwake ? 0 : R() * cfg.jungleClock * 0.5;
     zombies.push({ x: p.x, y: p.y, hx: p.x, hy: p.y, tx: p.x, ty: p.y, ph: R() * TAU, limp: R() < 0.5, hunch: (R() - 0.5) * 0.4,
       coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0, wake });
@@ -161,15 +221,14 @@ function generate(seed, cfg = { swarms: 9, zombies: 11, signs: true, jungleClock
     { id: 'w2', kind: 'cub', reg: 'N2207K', type: 'Piper Cub', flyable: false, why: 'Flat tire and a cracked wing. Not this one!', stripe: '#1a1a1a', paint: '#e2bd3c', flatTire: true },
     { id: 'w3', kind: 'baron', reg: 'N7766B', type: 'Beechcraft Baron', flyable: false, why: 'The fuel tanks are full of bullet holes.', stripe: '#2e7d4f', paint: '#e3e0d6', bulletHoles: true, oil: true },
   ];
-  const slots = [
-    { x: sx0 + 270, y: sy0 + SH + 200, rot: -Math.PI / 2 }, { x: sx0 + 760, y: sy0 + SH + 200, rot: -Math.PI / 2 }, { x: sx0 + 1250, y: sy0 + SH + 200, rot: -Math.PI / 2 },
-    { x: sx0 + 510, y: sy0 - 200, rot: Math.PI / 2 }, { x: sx0 + 1000, y: sy0 - 200, rot: Math.PI / 2 },
-  ];
+  const below = Math.atan2(-vy, -vx), above = Math.atan2(vy, vx);   // noses point at the strip
+  const slots = [[-490, STRIP_H / 2 + 200, below], [0, STRIP_H / 2 + 200, below], [490, STRIP_H / 2 + 200, below],
+    [-245, -(STRIP_H / 2 + 200), above], [245, -(STRIP_H / 2 + 200), above]];
   const order = planes.map((p, i) => i).sort(() => R() - 0.5);
-  planes.forEach((p, i) => { const sl = slots[order[i]]; p.x = sl.x; p.y = sl.y; p.rot = sl.rot + (R() - 0.5) * 0.25; });
+  planes.forEach((p, i) => { const [lx, ly, r] = slots[order[i]]; const w = toWorld(lx, ly); p.x = w.x; p.y = w.y; p.rot = r + (R() - 0.5) * 0.25; });
 
-  const checkpoints = [{ ...N.S, lit: true, camp: true }, ...['J1', 'J2', 'J3'].map(k => ({ x: N[k].x - 50, y: N[k].y - 50, lit: false }))];
-  return { checkpoints, seed, grid, at, riverY, bridges, N, strip, stripKey, trees, buckets, bushes, signs, items, swarms, zombies, planes, routePts, start: { ...N.S } };
+  return { checkpoints, grid, at, riverPts, bridges, N: { S: start }, strip, stripKey: Math.round(sc.x) + ',' + Math.round(sc.y),
+    decoys, trees, buckets, bushes, signs, items, swarms, zombies, planes, routePts, routeLen, start: { ...start } };
 }
 
 // ---------- The run ----------
@@ -312,13 +371,13 @@ function update(dt) {
   if (!windShown && ds < 1300) { windShown = true; say('A windsock pokes above the trees…', '#ffd970', 3); }
   if (!smokeShown && t > opts.mode.smokeAfter) { smokeShown = true; say('Smoke above the canopy. Someone lit a fire by the planes!', '#ffd970', 3.5); }
   for (const s of world.signs) if (!s.seen && Math.hypot(s.x - me.x, s.y - me.y) < 120) { s.seen = true; say(s.broken ? 'A broken trail sign. Hard to read…' : 'A trail sign: STRIP →', '#ffd970', 2.2); }
-  if (!me.foundStrip && me.x > world.strip.x0 - 40 && me.x < world.strip.x0 + world.strip.w + 40 && me.y > world.strip.y0 - 60 && me.y < world.strip.y0 + world.strip.h + 160) {
+  if (!me.foundStrip && world.strip.contains(me.x, me.y, 220, 460)) {
     me.foundStrip = true; say('THE AIRSTRIP! Find a plane that can fly.', '#7bed9f', 3);
   }
-  // a decoy clearing
-  for (const k of ['P0', 'P1', 'P2', 'P3']) {
-    if (k === world.stripKey || me['saw' + k]) continue;
-    if (Math.hypot(world.N[k].x - me.x, world.N[k].y - me.y) < 160) { me['saw' + k] = true; say('Just an empty clearing. Not the airstrip.', '#ff9f43', 2.4); }
+  // a decoy clearing at the end of a dead-end trail
+  for (const d of world.decoys) {
+    if (d.seen || Math.hypot(d.x - me.x, d.y - me.y) > 160) continue;
+    d.seen = true; say('Just an empty clearing. Not the airstrip.', '#ff9f43', 2.4);
   }
 
   // planes: walk up to one and climb in
@@ -599,10 +658,11 @@ function draw() {
   }
   // the airstrip: dirt runway with a centre line of stones
   const s = world.strip;
-  ctx.fillStyle = '#e8e2d0';
-  for (let x = s.x0 + 30; x < s.x0 + s.w - 30; x += 60) ctx.fillRect(x, s.cy - 3, 26, 6);
+  ctx.save(); ctx.translate(s.cx, s.cy); ctx.rotate(s.ang); ctx.fillStyle = '#e8e2d0';
+  for (let x = -s.w / 2 + 30; x < s.w / 2 - 30; x += 60) ctx.fillRect(x, -3, 26, 6);
+  ctx.restore();
   // a fire barrel by the planes (the smoke clue)
-  const fx = s.x0 + s.w - 60, fy = s.y0 + s.h + 40;
+  const { x: fx, y: fy } = s.toWorld(s.w / 2 - 60, s.h / 2 + 40);
   ctx.fillStyle = '#3a3a3a'; ctx.beginPath(); ctx.arc(fx, fy, 12, 0, TAU); ctx.fill();
   ctx.fillStyle = `rgba(255,${140 + Math.random() * 60},40,0.9)`; ctx.beginPath(); ctx.arc(fx, fy, 7 + Math.random() * 3, 0, TAU); ctx.fill();
 
@@ -675,7 +735,7 @@ function draw() {
     }
   }
   // the windsock, poking up above the canopy at the end of the strip
-  const wx = s.x0 + 20, wy = s.y0 - 20;
+  const { x: wx, y: wy } = s.toWorld(-s.w / 2 + 20, -s.h / 2 - 20);
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(wx, wy); ctx.lineTo(wx, wy - 70); ctx.stroke();
   ctx.save(); ctx.translate(wx, wy - 66); ctx.rotate(0.3 + Math.sin(t * 2) * 0.15);
   for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#fff' : '#ff7a1a'; ctx.fillRect(k * 12, -7 + k, 12, 14 - k * 2); }
@@ -813,7 +873,7 @@ function hud() {
     const mw = 150 * u, mh = mw * MH / MW, mx = W - mw - pad, my = pad + 36 * u;
     ctx.fillStyle = 'rgba(233,220,176,0.92)'; ctx.fillRect(mx, my, mw, mh);
     ctx.strokeStyle = '#2b6b8a'; ctx.lineWidth = 3 * u; ctx.beginPath();
-    for (let x = 0; x <= MW; x += 100) { const y = world.riverY(x); x === 0 ? ctx.moveTo(mx + x / MW * mw, my + y / MH * mh) : ctx.lineTo(mx + x / MW * mw, my + y / MH * mh); }
+    world.riverPts.forEach((q, i) => i ? ctx.lineTo(mx + q.x / MW * mw, my + q.y / MH * mh) : ctx.moveTo(mx + q.x / MW * mw, my + q.y / MH * mh));
     ctx.stroke();
     ctx.strokeStyle = '#b22'; ctx.lineWidth = 2 * u; ctx.beginPath();
     ctx.arc(mx + (world.strip.cx + 180) / MW * mw, my + (world.strip.cy - 120) / MH * mh, 34 * u, 0, TAU); ctx.stroke();
@@ -923,7 +983,7 @@ G.Jungle = {
   stats() { return { time: t, deaths: (me && me.deaths) || 0 }; },
   get running() { return running; },
   // for testing: where things are
-  debug() { return { me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
+  debug() { return { world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
   generate,
 };
 })();

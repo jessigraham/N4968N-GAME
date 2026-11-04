@@ -401,3 +401,5 @@ body {
   #winLine { font-size: 15px; margin: 4px 0 6px; }
   .stats { font-size: 12px; margin: 4px 0; }
 }
+.mapLine { margin: 4px 0; font: 600 13px ui-monospace, Menlo, monospace; color: #bdb5a4; }
+.mapLine .link { font-family: system-ui, sans-serif; font-size: 13px; }

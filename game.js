@@ -21,6 +21,7 @@ const MODES = G.MODES = {
     bite: 25, feverDrain: 1.5, respawnFever: 30,
     // the bot rival: jungle speed (1 = your running speed), chance of a wrong turn, seconds per cockpit action,
     // chance of a cockpit mistake, chance of beating a zombie
+    routeRange: [1900, 2700],   // how long the real trail from camp to the strip may be (pixels)
     botSpeed: 0.7, botDetour: 0.5, botStep: 1.7, botMistake: 0.3, botFight: 0.5,
   },
   medium: {
@@ -30,6 +31,7 @@ const MODES = G.MODES = {
     smokeAfter: 45, signs: true, radio: 1,
     counterWindow: 0.5, counterCooldown: 1.5, pairLunge: 0,
     bite: 34, feverDrain: 2.5, respawnFever: 30,
+    routeRange: [2200, 3200],
     botSpeed: 0.85, botDetour: 0.3, botStep: 1.05, botMistake: 0.14, botFight: 0.7,
   },
   hard: {
@@ -39,6 +41,7 @@ const MODES = G.MODES = {
     smokeAfter: 90, signs: false, radio: 0.45,
     counterWindow: 0.3, counterCooldown: 2, pairLunge: 0.35,
     bite: 50, feverDrain: 4, respawnFever: 30,
+    routeRange: [2600, 4000],
     botSpeed: 1.0, botDetour: 0.12, botStep: 0.6, botMistake: 0.04, botFight: 0.9,
   },
 };
@@ -423,7 +426,7 @@ function startStory() {
     if (mode === 'online') Net.send({ t: 'pick', char: pick });
   }, () => {
     if (mode === 'online' && !Net.connected()) mode = 'solo';   // rival left during the story
-    if (mode === 'solo' || mode === 'bot') { startJungle(Math.floor(Math.random() * 1e9)); return; }
+    if (mode === 'solo' || mode === 'bot') { startJungle(newSeed()); return; }
     ready.me = true;
     Net.send({ t: 'ready', char: myChar });
     showScreen('airstrip');
@@ -452,10 +455,21 @@ function updateRival() {
 }
 function maybeStart() {
   if (Net.role === 'host' && ready.me && ready.them && Net.connected()) {
-    const seed = Math.floor(Math.random() * 1e9);
+    const seed = newSeed();
     setTimeout(() => { Net.send({ t: 'jungle', seed }); startJungle(seed); }, 900);
   }
 }
+
+// ---------- Map codes: every game is a new island; share its code to replay it ----------
+const CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const mapCode = seed => { let s = '', n = seed >>> 0; for (let i = 0; i < 6; i++) { s = CODE_CHARS[n % 32] + s; n = Math.floor(n / 32); } return 'KANOA-' + s; };
+const codeSeed = code => { const c = String(code || '').toUpperCase().replace(/^KANOA-?/, ''); if (!/^[2-9A-HJ-NP-Z]{6}$/.test(c)) return null; let n = 0; for (const ch of c) n = n * 32 + CODE_CHARS.indexOf(ch); return n >>> 0; };
+let sharedSeed = codeSeed(new URLSearchParams(location.search).get('map'));
+function newSeed() {
+  if (sharedSeed !== null) { const s = sharedSeed; sharedSeed = null; return s; }   // a map someone shared
+  return Math.floor(Math.random() * 32 ** 6) >>> 0;
+}
+let currentSeed = 0;
 
 // ---------- The jungle run: find the airstrip, then climb into a plane ----------
 // your rival (online player or bot) climbed into a plane: their cockpit clock is now running
@@ -466,6 +480,7 @@ function rivalBoarded(plane, jungle) {
 }
 let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0;
 function startJungle(seed) {
+  currentSeed = seed;
   rivalBoardedAt = null; oppPlane = null;
   myJungle = { time: 0, deaths: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
   wantAgain = { me: false, them: false }; againMsg = '';
@@ -520,7 +535,7 @@ function setStatus(sel, text, err) { const el = $(sel); el.textContent = text; e
 
 function maybeRematch() {
   if (Net.role === 'host' && wantAgain.me && wantAgain.them && Net.connected()) {
-    const seed = Math.floor(Math.random() * 1e9);
+    const seed = newSeed();
     Net.send({ t: 'jungle', seed }); startJungle(seed);
   }
 }
@@ -822,6 +837,7 @@ function fillCard() {
   $('#resStatus').textContent = mode === 'online' && oppGone ? 'Your rival left the race.' : againMsg;
   $('#again').disabled = mode === 'online' && oppGone;
   $('#changeChar').classList.toggle('hidden', mode === 'online');
+  $('#mapCode').textContent = 'Map ' + mapCode(currentSeed);
 }
 
 function hideEnding() {
@@ -874,11 +890,16 @@ $('#shareBtn').addEventListener('click', () => {
   navigator.share({ title: 'N4968N cockpit race', text: `Race me off the zombie island! Code ${Net.code}`, url: link }).catch(() => {});
 });
 $('#again').addEventListener('click', () => {
-  if (mode === 'solo' || mode === 'bot') { startJungle(Math.floor(Math.random() * 1e9)); return; }
+  if (mode === 'solo' || mode === 'bot') { startJungle(newSeed()); return; }
   wantAgain.me = true; Net.send({ t: 'again' });
   againMsg = wantAgain.them ? 'Starting…' : 'Waiting for your rival to press Fly again…';
   $('#resStatus').textContent = againMsg;
   maybeRematch();
+});
+$('#copyMap').addEventListener('click', async () => {
+  const link = location.origin + location.pathname + '?map=' + mapCode(currentSeed);
+  try { await navigator.clipboard.writeText(link); $('#copyMap').textContent = 'Link copied!'; } catch (e) { $('#copyMap').textContent = link; }
+  setTimeout(() => { $('#copyMap').textContent = 'Copy map link'; }, 1800);
 });
 $('#changeChar').addEventListener('click', () => {
   hideEnding();
@@ -886,7 +907,7 @@ $('#changeChar').addEventListener('click', () => {
   state = 'menu';
   document.body.classList.remove('playing');
   $('#quitBtn').classList.add('hidden');
-  G.Story.chooseAgain(c => { pickChar(c); if (mode === 'bot') pickBot(); }, () => startJungle(Math.floor(Math.random() * 1e9)));
+  G.Story.chooseAgain(c => { pickChar(c); if (mode === 'bot') pickBot(); }, () => startJungle(newSeed()));
 });
 $('#toMenu').addEventListener('click', toMenu);
 $('#quitBtn').addEventListener('click', toMenu);
