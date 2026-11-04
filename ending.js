@@ -9,6 +9,7 @@ const ctx = canvas.getContext('2d');
 const dpr = Math.min(1.5, window.devicePixelRatio || 1);
 const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 let running = false, t0 = 0, last = 0, onDone = null, done = false, DUR = 4.5;
+let fireworks = false, nextBurst = 0, sparks = [];
 const horde = Array.from({ length: 16 }, (_, i) => ({ x: 0.3 + i * 0.037 + Math.random() * 0.02, ph: Math.random() * 6, limp: i % 2, hunch: (i % 3 - 1) * 0.3, coat: ['lab', 'khaki', 'rags'][i % 3] }));
 
 // a small high-wing plane from the side, nose to the left, climbing
@@ -50,6 +51,19 @@ function draw(now) {
   const px = W * (0.86 - 0.62 * Math.pow(k, 0.9)), py = hy + 41 * u - Math.pow(k, 1.3) * 330 * u;
   plane(px, py, (1.5 - 0.6 * k) * u, -0.18 - 0.1 * Math.sin(k * Math.PI), t);
   ctx.restore();
+  // fireworks and flares bursting over the sunset
+  if (fireworks && t > nextBurst) {
+    nextBurst = t + 0.45 + Math.random() * 0.6;
+    const bx = W * (0.15 + Math.random() * 0.7), by = H * (0.1 + Math.random() * 0.3), col = ['255,210,120', '255,140,160', '255,250,235', '140,230,255', '200,255,150'][Math.floor(Math.random() * 5)];
+    for (let i = 0; i < 70; i++) { const a = Math.random() * TAU, v = (80 + Math.random() * 160) * dpr; sparks.push({ x: bx, y: by, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 1.3 + Math.random() * 0.6, col }); }
+    if (G.Sfx && G.Sfx.ctx) G.Sfx.burst(Math.random() - 0.5, G.Sfx.t, 0.35, 900, 'lowpass', 0.25);
+  }
+  const fdt = Math.min(0.05, (now - (draw.prev || now)) / 1000); draw.prev = now;
+  for (const sp of sparks) { sp.vy += 60 * dpr * fdt; sp.vx *= 0.985; sp.vy *= 0.985; sp.x += sp.vx * fdt; sp.y += sp.vy * fdt; sp.life -= fdt; }
+  sparks = sparks.filter(sp => sp.life > 0);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const sp of sparks) { ctx.fillStyle = `rgba(${sp.col},${Math.min(1, sp.life)})`; ctx.beginPath(); ctx.arc(sp.x, sp.y, 2.2 * dpr, 0, TAU); ctx.fill(); }
+  ctx.globalCompositeOperation = 'source-over';
   G.Scene.overlay(ctx, W, H, 0.7);
   if (!done && k >= 1) { done = true; if (onDone) onDone(); }
 }
@@ -66,6 +80,7 @@ G.Ending = {
     running = true;
     if (!looping) { looping = true; requestAnimationFrame(loop); }
   },
-  stop() { running = false; canvas.classList.add('hidden'); },
+  stop() { running = false; fireworks = false; sparks = []; canvas.classList.add('hidden'); },
+  fireworks(on) { fireworks = on; nextBurst = 0; },
 };
 })();

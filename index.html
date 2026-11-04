@@ -36,6 +36,27 @@
   <button id="jAttack" type="button" aria-label="Attack"></button>
   <button id="jAct" type="button" class="hidden">Climb in</button>
 </div>
+<div id="flight" class="hidden">
+  <canvas id="flightCanvas"></canvas>
+  <div class="fhud">
+    <div class="ftop">
+      <div class="fchip fbadge" id="fBadge">Crosswind</div>
+      <div class="fchip" id="fReg">N4968N</div>
+      <div class="fchip">Finish <b id="fDist">--</b> mi</div>
+      <div class="fchip">Time <b id="fTime">0:00</b></div>
+    </div>
+    <div class="fmeters">
+      <div class="fmeter">Airframe<div class="fbar"><i id="fHull"></i></div></div>
+      <div class="fmeter">Fuel<div class="fbar"><i id="fFuel"></i></div></div>
+      <div class="fmeter">Throttle <span id="fThr">75%</span> · <span id="fKts">105</span> kt · 4,500 ft</div>
+    </div>
+    <div class="fmsg" id="fMsg"></div>
+  </div>
+  <div class="ftouch">
+    <div><button id="fL" type="button" aria-label="Bank left">◀</button><button id="fR" type="button" aria-label="Bank right">▶</button></div>
+    <div><button id="fD" type="button" aria-label="Less throttle">−</button><button id="fU" type="button" aria-label="More throttle">+</button></div>
+  </div>
+</div>
 <div id="countdown" class="hidden"></div>
 <div id="runFade" class="hidden"></div>
 <div id="rotate"><div>Turn your phone sideways<br><span>⟳</span></div></div>
@@ -155,13 +176,17 @@
 
 <canvas id="flyout" class="hidden"></canvas>
 <div id="result" class="overlay hidden">
-  <div class="card winCard">
+  <div class="stamp hidden" id="stamp">ESCAPED KANOA</div>
+  <div class="card winCard hidden" id="winCard">
     <img id="winImg" alt="">
     <div class="winText">
       <p class="role" id="winBadge"></p>
       <h1 id="resTitle"></h1>
       <blockquote id="winLine"></blockquote>
       <p id="resSub" class="story"></p>
+      <p class="statHead" id="statHead">Your run</p>
+      <div id="statGrid" class="statGrid"></div>
+      <div id="rating" class="rating hidden"></div>
       <ul id="resList" class="stats"></ul>
       <p class="mapLine"><span id="mapCode"></span> <button id="copyMap" type="button" class="link">Copy map link</button></p>
       <p class="status" id="resStatus"></p>
@@ -182,6 +207,7 @@
 <script src="hands.js"></script>
 <script src="planes.js"></script>
 <script src="jungle.js"></script>
+<script src="flight.js"></script>
 <script src="intro.js"></script>
 <script src="net.js"></script>
 <script src="game.js"></script>

@@ -245,12 +245,14 @@ G.Planes = {
     if (p.propAngle == null) p.propAngle = (p.x * 7.3) % TAU;
     // shadow on the ground (higher wings throw it farther)
     const lift = T.high ? 1.3 : 1;
+    if (!p.inFlight) {   // parked: a shadow on the ground (in flight, the flight draws one far below)
     ctx.save(); ctx.translate(p.x + SHADOW[0] * sc * lift, p.y + SHADOW[1] * sc * lift); ctx.rotate(p.rot);
     if (p.flatTire) ctx.rotate(0.04);
     ctx.filter = 'blur(5px)';   // a soft dusk shadow (browsers without canvas filters just get a sharp one)
     ctx.scale(sc, sc); silhouette(ctx, T, 'rgba(0,0,0,0.32)'); ctx.restore();
+    }
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(sc, sc);
-    ground(ctx, p, T);
+    if (!p.inFlight) ground(ctx, p, T);   // chocks, ropes and fuel cans stay on the ground
     body(ctx, p, T, t);
     ctx.restore();
   },

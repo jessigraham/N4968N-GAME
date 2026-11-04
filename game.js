@@ -25,6 +25,12 @@ const MODES = G.MODES = {
     // chance of a cockpit mistake, chance of beating a zombie
     routeRange: [1900, 2700],   // how long the real trail from camp to the strip may be (pixels)
     botSpeed: 0.7, botDetour: 0.5, botStep: 1.7, botMistake: 0.3, botFight: 0.5,
+    // the storm flight: storm size, wind, lightning, damage, fuel (seconds), birds, gusts and the finish gate
+    flight: {
+      storm: [1800, 2000], extraCell: false, wind: 85, turbulence: 1.4, lightning: 0.25, strikeDamage: 9, stormDamage: 1.6,
+      fuel: 140, flocks: 3, birdDamage: 6, gust: { every: [14, 20], power: 70 },
+      gate: { half: 360, sway: 0, label: 'FINISH', note: 'A wide gate. Fly anywhere between the beacons.' },
+    },
   },
   medium: {
     name: 'Crosswind', tag: 'They’re closer than you think.', color: '#f5aa4a',
@@ -36,6 +42,11 @@ const MODES = G.MODES = {
     bite: 34, feverDrain: 2.5, respawnFever: 30,
     routeRange: [2200, 3200],
     botSpeed: 0.85, botDetour: 0.3, botStep: 1.05, botMistake: 0.14, botFight: 0.7,
+    flight: {
+      storm: [2100, 2300], extraCell: false, wind: 110, turbulence: 2, lightning: 0.4, strikeDamage: 12, stormDamage: 2.2,
+      fuel: 108, flocks: 7, birdDamage: 9, gust: { every: [8, 13], power: 115 },
+      gate: { half: 210, sway: 0, crosswind: 70, label: 'FINISH', note: 'A narrow gate in a steady crosswind. Crab into the wind.' },
+    },
   },
   hard: {
     name: 'Mayday', tag: 'Patient zero is already at the airstrip.', color: '#ff5a4f',
@@ -47,6 +58,11 @@ const MODES = G.MODES = {
     bite: 50, feverDrain: 4, respawnFever: 30,
     routeRange: [2600, 4000],
     botSpeed: 1.0, botDetour: 0.12, botStep: 0.6, botMistake: 0.04, botFight: 0.9,
+    flight: {
+      storm: [2400, 2600], extraCell: true, wind: 135, turbulence: 2.7, lightning: 0.6, strikeDamage: 15, stormDamage: 3,
+      fuel: 88, flocks: 12, birdDamage: 12, gust: { every: [5, 9], power: 160 },
+      gate: { half: 140, sway: 260, period: 7, label: 'FINISH', note: 'A tight gate that drifts up and down in the wind. Time it.' },
+    },
   },
 };
 let modeKey = 'medium';
@@ -162,7 +178,8 @@ function speak(p, line, gap = 0) {
   return Sfx.voice((CHARS[p.char] || CHARS.ivy).voice, line);
 }
 
-G.winner = () => [me, opp].filter(p => p && p.airborne).sort((a, b) => a.finishT - b.finishT)[0] || null;
+// the winner is the first through the finish gate at the end of the storm flight
+G.winner = () => [me, opp].filter(p => p && p.flight && p.flight.win).sort((a, b) => a.gateT - b.gateT)[0] || null;
 
 // ---------- Rules ----------
 function cascade(p) {
@@ -405,6 +422,8 @@ Net.onMsg = m => {
   else if (m.t === 'again') { wantAgain.them = true; againMsg = 'Your rival wants a rematch!'; $('#resStatus').textContent = againMsg; maybeRematch(); }
   else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
+  else if (m.t === 'fpos') { G.Flight.rivalPos({ x: m.x, y: m.y, h: m.h }); }
+  else if (m.t === 'flown') { if (opp) { opp.flight = m.r; opp.gateT = m.gateT; } }
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') rivalBoarded(m.plane, m.jungle);
@@ -486,7 +505,7 @@ let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths =
 function startJungle(seed) {
   currentSeed = seed;
   rivalBoardedAt = null; oppPlane = null;
-  myJungle = { time: 0, deaths: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
+  myJungle = { time: 0, deaths: 0, kills: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
   wantAgain = { me: false, them: false }; againMsg = '';
   hideEnding();
   state = 'jungle';
@@ -770,7 +789,48 @@ function botThink(p) {
   }
 }
 
-// ---------- The ending: fly-out over the island, then the winner card ----------
+// ---------- The storm flight: after takeoff, fly to the finish gate. The first through the gate wins. ----------
+const FLIGHT_INTRO = 3.8, FLIGHT_DELAY = 1.6;   // seconds of climb-out, and the pause after liftoff
+const FLIGHT_PAINT = { c172: '#a8322b', cherokee: '#1f5f9e' };
+function planeLook(p) { const kind = p.planeType === 'cherokee' ? 'cherokee' : 'c172'; return { kind, reg: p.reg, stripe: FLIGHT_PAINT[kind] }; }
+
+function startFlight() {
+  if (state === 'menu' || me.flight) return;
+  me.flying = true;
+  $('#timer .lbl').textContent = 'Storm flight';
+  G.Flight.start({
+    seed: currentSeed, cfg: M().flight, modeName: M().name, modeColor: M().color,
+    plane: planeLook(me), voice: CHARS[me.char].voice,
+    onPos: mode === 'online' ? pos => Net.send({ t: 'fpos', ...pos }) : null,
+    onDone: r => flightDone(r),
+    rival: opp ? rivalInFlight() : null,
+  });
+}
+function rivalInFlight() {
+  const r = { plane: planeLook(opp), label: CHARS[opp.char].short.toUpperCase() };
+  if (opp.flightPlan) { r.plan = opp.flightPlan; r.startedAt = opp.flightStartAt; }
+  return r;
+}
+function flightDone(r) {
+  me.flight = r; me.flying = false;
+  me.gateT = r.win ? me.finishT + FLIGHT_DELAY + FLIGHT_INTRO + r.time : Infinity;
+  if (mode === 'online') Net.send({ t: 'flown', r, gateT: me.gateT });
+  startEnding();
+}
+// the bot takes off: plan its flight around the same storm, with mode-scaled skill
+function planBotFlight() {
+  const plan = G.Flight.botPlan(currentSeed, M().flight, { speed: M().botSpeed, mistake: M().botMistake });
+  const lead = (opp.finishT + FLIGHT_DELAY + FLIGHT_INTRO - raceT) * 1000;   // it may have taken off a moment ago
+  opp.flightPlan = plan; opp.flightStartAt = performance.now() + lead;
+  opp.gateT = plan.win ? opp.finishT + FLIGHT_DELAY + FLIGHT_INTRO + plan.time : Infinity;
+  setTimeout(() => {
+    if (!opp || opp.flightPlan !== plan) return;
+    opp.flight = { win: plan.win, time: plan.time, hull: Math.round(plan.hull), fuel: Math.round(plan.fuel), reason: plan.reason };
+  }, Math.max(0, lead + plan.time * 1000));
+  if (G.Flight.running) G.Flight.setRival(rivalInFlight());
+}
+
+// ---------- The ending: fly-out over the island, then the winner and stats screen ----------
 const WIN_LINES = {
   ivy: 'Cure’s in my pocket. Zombies in my rearview.',
   wren: 'Eleven jungles. Never lost a guest. Not starting tonight.',
@@ -778,66 +838,126 @@ const WIN_LINES = {
   kip: 'Finally. A direction I’m sure of. Up.',
 };
 let againMsg = '';
-let endingShown = false, cardShown = false, playedWinFor = null, cardTimer = 0;
-let myJungle = { time: 0, deaths: 0 }, oppJungle = { time: 0, deaths: 0 };
+let endingShown = false, cardShown = false, playedWinFor = null, cardTimer = 0, statTimers = [];
+let myJungle = { time: 0, deaths: 0, kills: 0 }, oppJungle = { time: 0, deaths: 0 };
 
 function startEnding() {
   endingShown = true;
-  if (me.airborne) setTimeout(() => G.Ending.flyout(showCard), 1200);   // you escaped: watch the plane climb away
-  else setTimeout(showCard, 2200);                                       // left on the strip: the card over your cockpit
+  if (me.flight && me.flight.win) setTimeout(() => { G.Flight.stop(); G.Ending.flyout(showCard); }, 300);   // escaped: watch it fly away
+  else if (me.flight) setTimeout(() => { G.Flight.stop(); showCard(); }, 400);                             // lost in the storm
+  else setTimeout(showCard, 2200);                                                                         // left on the strip
 }
 
+function escaped() { return !!(me.flight && me.flight.win); }
+
+// the big sequence: a stamped title with a thud, the winner's card and line, the stats counting up, a rating with a fanfare
 function showCard() {
   cardShown = true;
-  fillCard();
-  $('#result').classList.remove('hidden');
+  const r = $('#result'), stamp = $('#stamp'), card = $('#winCard');
+  r.classList.remove('hidden'); card.classList.add('hidden'); $('#rating').classList.add('hidden');
+  const won = escaped();
+  stamp.textContent = won ? 'ESCAPED KANOA' : me.flight ? 'LOST IN THE STORM' : 'LEFT ON THE STRIP';
+  stamp.classList.toggle('lost', !won);
+  stamp.classList.remove('hidden', 'in'); void stamp.offsetWidth; stamp.classList.add('in');
+  statTimers.forEach(clearTimeout); statTimers = [];
+  const later = (ms, f) => statTimers.push(setTimeout(f, ms));
+  later(380, () => { Sfx.thud(); document.body.classList.remove('shake'); void document.body.offsetWidth; document.body.classList.add('shake'); if (!won) Sfx.somber(); });
+  later(1000, () => { card.classList.remove('hidden'); fillCard(); buildStats(); countStats(later, won); });
   clearInterval(cardTimer);
-  cardTimer = setInterval(() => { if (cardShown) fillCard(); }, 700);   // the rival may still be racing
+  cardTimer = setInterval(() => { if (cardShown) fillCard(); }, 700);   // the rival may still be flying
 }
 
-function escapeLine(p, jungle) {
-  if (p.airborne) {
-    const total = jungle.time + p.finishT;
-    return `escaped in ${fmt(total)} (jungle ${fmt(jungle.time)}, cockpit ${p.finishT.toFixed(1)} s) · ${p.mistakes} mistake${p.mistakes === 1 ? '' : 's'} · ${jungle.deaths} li${jungle.deaths === 1 ? 'fe' : 'ves'} lost`;
+function myStats() {
+  const f = me.flight || {}, flying = f.time ? FLIGHT_INTRO + f.time : 0;
+  return [
+    { k: 'Jungle', v: myJungle.time, f: v => fmt(v) },
+    { k: 'Cockpit', v: me.airborne ? me.finishT : (me.overrun ? RACE_TIME : 0), f: v => v.toFixed(1) + ' s' },
+    { k: 'Flight', v: flying, f: v => fmt(v) },
+    { k: 'Mistakes', v: me.mistakes, f: v => String(Math.round(v)) },
+    { k: 'Lives lost', v: myJungle.deaths, f: v => String(Math.round(v)) },
+    { k: 'Zombies defeated', v: myJungle.kills || 0, f: v => String(Math.round(v)) },
+    { k: 'Airframe', v: f.hull ?? 0, f: v => Math.round(v) + '%' },
+    { k: 'Fuel left', v: f.fuel ?? 0, f: v => Math.round(v) + '%' },
+    { k: 'Mode', v: 0, f: () => M().name, mode: true },
+    { k: 'Total time', v: myJungle.time + (me.airborne ? me.finishT + FLIGHT_DELAY : 0) + flying, f: v => fmt(v), total: true },
+  ];
+}
+function buildStats() {
+  const grid = $('#statGrid');
+  grid.innerHTML = '';
+  for (const s of myStats()) {
+    const d = document.createElement('div');
+    d.className = 'stat' + (s.total ? ' total' : '');
+    d.innerHTML = `<small>${s.k}</small><b>${s.mode ? `<span style="color:${M().color}">${s.f()}</span>` : s.f(0)}</b>`;
+    grid.appendChild(d);
   }
+  $('#statHead').textContent = escaped() ? 'Your escape' : me.flight ? 'Lost in the storm' : 'Left on the strip';
+}
+// each stat counts up with ticks and pops when it lands; then the rating stamps in with the fanfare and fireworks
+function countStats(later, won) {
+  const stats = myStats(), cells = [...document.querySelectorAll('#statGrid .stat')];
+  let at = 300;
+  stats.forEach((s, i) => {
+    const el = cells[i], b = el.querySelector('b'), steps = s.mode ? 1 : 12;
+    later(at, () => el.classList.add('on'));
+    for (let k = 1; k <= steps; k++) {
+      later(at + k * 40, () => {
+        if (!s.mode) b.textContent = s.f(s.v * k / steps);
+        if (k < steps) Sfx.tick(); else { Sfx.pop(); el.classList.remove('land'); void el.offsetWidth; el.classList.add('land'); }
+      });
+    }
+    at += steps * 40 + 160;
+  });
+  later(at + 300, () => showRating(won));
+}
+function showRating(won) {
+  const f = me.flight || {}, stars = [];
+  if (me.airborne && me.mistakes === 0) stars.push('Clean takeoff');
+  if (won && f.hull >= 80) stars.push('Storm dodger');
+  if (won && f.fuel >= 35) stars.push('Fuel miser');
+  const el = $('#rating');
+  const medal = won && modeKey === 'hard' ? '<div class="medal">🎖 Mayday survivor</div>' : '';
+  el.innerHTML = `<div class="stars">${'★'.repeat(stars.length)}${'☆'.repeat(3 - stars.length)}</div><div class="why">${stars.length ? stars.join(' · ') : won ? 'You made it. Now do it cleaner.' : 'No stars this time.'}</div>${medal}`;
+  el.classList.remove('hidden', 'in'); void el.offsetWidth; el.classList.add('in');
+  if (won) { Sfx.fanfare(); G.Ending.fireworks(true); }
+}
+
+function rivalLine(p, jungle) {
   if (p === opp && oppGone) return 'left the race';
+  if (p.flight) return p.flight.win ? `through the gate · ${fmt(p.gateT)} total race time · airframe ${p.flight.hull}%` : `lost in the storm (${p.flight.reason || 'down'})`;
+  if (p.airborne) return 'flying through the storm…';
   return p.overrun ? `left on the strip · ${jungle.deaths} li${jungle.deaths === 1 ? 'fe' : 'ves'} lost` : 'still on the strip…';
 }
 
 function fillCard() {
-  const w = G.winner(), m = M(), card = $('#result .card');
-  card.classList.toggle('loser', !!w && w !== me && !me.airborne);
+  const w = G.winner(), m = M(), card = $('#winCard');
+  card.classList.toggle('loser', !!w && w !== me);
   card.classList.toggle('overrun', !w);
   if (w) {
     $('#winImg').src = `assets/characters/${w.char}.png`;
-    $('#winBadge').textContent = `ESCAPED KANOA · ${m.name.toUpperCase()}`;
+    $('#winBadge').textContent = `${w === me ? 'ESCAPED KANOA' : 'WINNER'} · ${m.name.toUpperCase()}`;
     $('#winBadge').style.color = m.color;
     $('#resTitle').textContent = charName(w.char);
     $('#winLine').textContent = '“' + WIN_LINES[w.char] + '”';
     let sub;
     if (w === me) {
-      sub = mode === 'solo' ? `You got ${me.reg} off the island with ${fmt(RACE_TIME - me.finishT)} to spare.`
-        : opp && opp.airborne ? `Your rival escaped too, ${(opp.finishT - me.finishT).toFixed(1)} s behind you.`
-        : opp && opp.overrun ? 'Your rival was left on the strip.' : 'Your rival is still on the strip…';
-    } else sub = me.airborne ? `You escaped too, ${(me.finishT - w.finishT).toFixed(1)} s behind.` : 'You were left on the strip.';
+      sub = mode === 'solo' ? `You flew ${me.reg} through the gate at Safe Harbor.`
+        : opp && opp.flight && opp.flight.win ? `Your rival made it too, ${(opp.gateT - me.gateT).toFixed(1)} s behind you.`
+        : opp && (opp.overrun || (opp.flight && !opp.flight.win)) ? 'Your rival didn’t make it.' : 'Your rival is still out there…';
+    } else sub = escaped() ? `You made it too, ${(me.gateT - w.gateT).toFixed(1)} s behind.` : me.flight ? 'You were lost in the storm.' : 'You were left on the strip.';
     $('#resSub').textContent = sub;
     if (playedWinFor !== w) { playedWinFor = w; Sfx.playFile(`assets/voice/${w.char}-win.mp3`); }
   } else {
     $('#winImg').src = `assets/characters/${me.char}.png`;
-    $('#winBadge').textContent = `LEFT ON KANOA · ${m.name.toUpperCase()}`;
+    $('#winBadge').textContent = `NOBODY ESCAPED · ${m.name.toUpperCase()}`;
     $('#winBadge').style.color = '#ff6b6b';
-    $('#resTitle').textContent = 'Overrun';
-    $('#winLine').textContent = '“The horde reached the plane.”';
-    $('#resSub').textContent = opp && !opp.done ? 'You were left on the strip. Your rival is still trying…' : 'Nobody got off the island.';
+    $('#resTitle').textContent = me.flight ? 'Lost in the storm' : 'Overrun';
+    $('#winLine').textContent = me.flight ? '“' + (me.flight.reason || 'The storm won.') + '”' : '“The horde reached the plane.”';
+    $('#resSub').textContent = opp && !(opp.overrun || opp.flight) ? 'Your rival is still trying…' : 'Nobody got off the island.';
   }
   const list = $('#resList');
   list.innerHTML = '';
-  for (const [p, jungle, who] of [[me, myJungle, 'You'], [opp, oppJungle, 'Rival']]) {
-    if (!p) continue;
-    const li = document.createElement('li');
-    li.innerHTML = `<b>${who}</b> · ${charName(p.char)} in ${p.reg}: ${escapeLine(p, jungle)}`;
-    list.appendChild(li);
-  }
+  if (opp) { const li = document.createElement('li'); li.innerHTML = `<b>Rival</b> · ${charName(opp.char)} in ${opp.reg}: ${rivalLine(opp, oppJungle)}`; list.appendChild(li); }
   $('#resStatus').textContent = mode === 'online' && oppGone ? 'Your rival left the race.' : againMsg;
   $('#again').disabled = mode === 'online' && oppGone;
   $('#changeChar').classList.toggle('hidden', mode === 'online');
@@ -846,9 +966,9 @@ function fillCard() {
 
 function hideEnding() {
   cardShown = false; endingShown = false; playedWinFor = null;
-  clearInterval(cardTimer);
-  G.Ending.stop(); Sfx.stopFile();
-  $('#result').classList.add('hidden');
+  clearInterval(cardTimer); statTimers.forEach(clearTimeout); statTimers = [];
+  G.Ending.stop(); G.Flight.stop(); Sfx.stopFile();
+  $('#result').classList.add('hidden'); $('#stamp').classList.add('hidden'); $('#winCard').classList.add('hidden');
 }
 
 function toMenu() {
@@ -948,12 +1068,14 @@ function step(dt, now) {
       // an online rival who stopped sending past the deadline counts as overrun
       if (opp && !opp.done && raceT >= RACE_TIME && !Net.connected()) { opp.done = true; if (mode === 'bot') opp.overrun = true; }
     } else state = 'end';
-    if (me.done && !endingShown) startEnding();
+    if (me.airborne && !me.flightQueued) { me.flightQueued = true; setTimeout(startFlight, FLIGHT_DELAY * 1000); }
+    if (me.overrun && !endingShown) startEnding();
   }
   if (me && (state === 'race' || state === 'end')) updateMe(me, dt);
   if (opp && mode === 'bot' && state === 'race' && !opp.sim && botArrives !== null && raceT >= botArrives) {
     startBot(); oppJungle = { time: myJungle.time + botArrives, deaths: botJungleDeaths };
   }
+  if (opp && opp.sim && opp.airborne && !opp.flightPlan) planBotFlight();
   if (opp && opp.sim && (state === 'race' || state === 'end')) botStep(dt);
   else if (opp && (state === 'race' || state === 'end')) visuals(opp, dt);
 }
@@ -968,8 +1090,8 @@ function frame(now) {
 }
 function draw() {
   const rem = RACE_TIME - raceT;
-  $('#time').textContent = state === 'jungle' ? fmt(Math.max(0, M().jungleClock - G.Jungle.elapsed())) : fmt(state === 'menu' ? M().cockpitClock : rem);
-  $('#timer').classList.toggle('danger', state === 'race' && rem < 20);
+  $('#time').textContent = G.Flight.running ? fmt(G.Flight.debug().t) : state === 'jungle' ? fmt(Math.max(0, M().jungleClock - G.Jungle.elapsed())) : fmt(state === 'menu' ? M().cockpitClock : rem);
+  $('#timer').classList.toggle('danger', state === 'race' && rem < 20 && !G.Flight.running && !me.airborne);
   if (document.hidden) return;
   const racing = state === 'race';
   if (me) {

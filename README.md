@@ -12,7 +12,8 @@ The game opens on the title screen. From there:
 2. **Who are you?** Choose Dr. Ivy Thorne or Dr. Elias Fernsby (Botanists), or Wren "Riptide" Calloway or Kip "Compass" Monroe (Jungle Explorers). You'll see their backstory and hear their line.
 3. **Your path:** grab your things in the lab tent or at the river camp, then **run for the airstrip**.
 4. **The jungle run.** Every game is a brand-new island: the camp, the airstrip (where it is and which way it points), the river and its bridges, and the trails with their dead ends and loops all change, so you can't memorize the way. Find the hidden airstrip. Follow the trails, read the trail signs, grab the torn map piece, listen for the radio getting louder, and watch for the windsock and the smoke above the trees. Mosquito swarms raise your fever (bug spray and med kits bring it down; a high fever blurs your vision and slows you). Zombies on the trails lunge and knock you back. At the airstrip, find a plane that can fly: look for fuel cans by the nose, chocks already pulled, and an open key box. That's the Cessna 172 N4968N or the Piper Cherokee N5512P. The others are covered up, missing a propeller, on a flat tire, or shot full of holes. (On Clear Skies, a soft arrow points to the planes that fly.)
-5. **The cockpit race.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
+5. **The cockpit race** gets you off the ground.
+6. **The storm flight.** Fly the plane you took off in (Cessna or Cherokee) through a rotating storm to the finish gate over Safe Harbor Field. Watch out for wind that pulls you in, lightning in the core, bird flocks, gusts and your fuel. **The first through the gate wins.** Your character's hands work the controls, and their voice shouts "Clear prop!" and reacts during the race.
 
 **On your own:** choose **Solo practice**.
 
@@ -58,6 +59,17 @@ In the jungle, zombies trickle in, come in waves at half time and at 80%, and po
 - **Computer:** arrow keys or WASD to run, **Shift** to sprint (watch the stamina bar), **Space** to fight back, **Space** or **Enter** to climb into a plane.
 - **Phone:** the thumb joystick bottom-left, the weapon and **Sprint** buttons bottom-right, and **Climb in** when you reach a plane.
 - **Online:** you both run the same jungle and see each other as a faded "RIVAL". Whoever climbs into a plane first gets a head start: the horde starts closing in on the airstrip for both of you.
+
+### Flying the storm
+
+- **Computer:** left and right arrows (or A and D) to bank, up and down arrows (or W and S) for throttle. The gold arrow points to the finish gate, and the weather radar shows the storm.
+- **Phone:** bank buttons bottom-left, throttle buttons bottom-right.
+- **The modes:** Clear Skies has a smaller storm, plenty of fuel and a wide blue gate. Crosswind has a bigger storm, birds, gusts and a narrow gold gate in a crosswind. Mayday has two storm cells, thin fuel, many birds and a tight red gate that drifts.
+- Online and against the bot, you both fly the same storm and see each other on the map and the radar. Running out of fuel or losing the airframe means you're out. If nobody makes it, nobody escapes.
+
+### The winner screen
+
+After the plane flies off over the sunset, **ESCAPED KANOA** stamps in. The winner's card slides in with their line, then your stats count up one by one: jungle, cockpit and flight time, mistakes, lives lost, zombies defeated, airframe, fuel and total time. Then you get up to three stars (Clean takeoff, Storm dodger, Fuel miser) and, on Mayday, the Mayday survivor medal, with a brass fanfare and fireworks. If you didn't make it, you see the winner's card over your own stats with a somber sting.
 
 ### Fighting back and staying alive
 
@@ -125,6 +137,7 @@ Then visit http://localhost:8765 in your browser.
 - `cockpit.js` draws the pilot's-seat view, panel, palm trees and zombies in code (no paid art).
 - `jungle.js` makes and draws the jungle run (trails, river, trees, mosquitoes, zombies, the airstrip and its planes) in code. No downloaded art.
 - `planes.js` draws the parked planes from above at real size (Cessna 172 and 150, Piper Cherokee, Piper Cub, Beechcraft Baron), with shadows, nav lights, stripes, chocks, tie-downs and fuel cans.
+- `flight.js` is the storm flight: the climb-out, the storm, birds, gusts, the finish gate, the radar and the bot's flight plan.
 - `ending.js` plays the escape: the camera pulls back over the island as the plane climbs away.
 - `hands.js` animates the character's hand reaching for each control, using the hand pictures in `assets/characters/`.
 - `assets/voice/` holds the recorded character lines (a female and a male voice).

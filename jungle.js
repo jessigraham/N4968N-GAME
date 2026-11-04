@@ -484,7 +484,7 @@ let floats = [];
 function pop(x, y, text, color) { floats.push({ x, y, text, color, life: 1.2 }); }
 
 // one hit on a zombie: it staggers back with a flash; the last hit brings it down
-function strike(z, dmg, fromX, fromY, stun, knock) {
+function strike(z, dmg, fromX, fromY, stun, knock, byMe) {
   z.maxHp = z.maxHp ?? (z.hp ?? opts.mode.zombieHP);
   z.hp = (z.hp ?? opts.mode.zombieHP) - dmg;
   z.hitAt = t; z.windup = 0; z.cool = t + 1.2; z.stunUntil = Math.max(z.stunUntil || 0, t + stun);
@@ -492,6 +492,7 @@ function strike(z, dmg, fromX, fromY, stun, knock) {
   if (knock) { z.kx = Math.cos(a) * knock; z.ky = Math.sin(a) * knock; }
   if (z.hp <= 0) {
     z.dead = t; z.kx = Math.cos(a) * 160; z.ky = Math.sin(a) * 160;
+    if (byMe) me.kills = (me.kills || 0) + 1;
     pop(z.x, z.y - 80, 'DOWN!', '#ffd970');
     G.Sfx.groan(0.12);
     if (Math.random() < opts.mode.dropChance) world.items.push({ kind: Math.random() < 0.5 ? 'spray' : 'med', x: z.x, y: z.y });
@@ -516,7 +517,7 @@ function attack() {
     const countered = !!z.windup;
     if (countered) counters++;
     // every strike lands a hit; catching a lunge is a perfect counter worth double and a longer stagger
-    strike(z, countered ? 2 : 1, me.x, me.y, opts.char === 'kip' ? w.stun : countered ? w.stun : 0.45, countered ? w.knock : w.knock * 0.45);
+    strike(z, countered ? 2 : 1, me.x, me.y, opts.char === 'kip' ? w.stun : countered ? w.stun : 0.45, countered ? w.knock : w.knock * 0.45, true);
     if (!z.dead) pop(z.x, z.y - 80, countered ? 'PERFECT COUNTER!' : opts.char === 'kip' ? 'STUNNED' : 'HIT!', countered ? '#7bed9f' : '#fff');
   }
   // sounds and character touches
@@ -1016,7 +1017,7 @@ G.Jungle = {
   elapsed() { return t; },
   botEta,
   botStats() { return bot ? { time: t, deaths: bot.deaths } : null; },
-  stats() { return { time: t, deaths: (me && me.deaths) || 0 }; },
+  stats() { return { time: t, deaths: (me && me.deaths) || 0, kills: (me && me.kills) || 0 }; },
   get running() { return running; },
   // for testing: where things are
   debug() { return { world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },

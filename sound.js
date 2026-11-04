@@ -86,6 +86,36 @@ const Sfx = G.Sfx = {
   beep(f) { if (!this.ctx) return; this.tone(0, this.t, 0.18, f, 'sine', 0.3); },
   win() { if (!this.ctx) return; [523, 659, 784, 1047].forEach((f, i) => this.tone(0, this.t + i * 0.12, 0.35, f, 'triangle', 0.22)); },
   lose() { if (!this.ctx) return; this.tone(0, this.t, 1.8, 220, 'sawtooth', 0.15, 50); this.groan(); },
+  // The winner screen: a stamp thud, count-up ticks, a pop as each stat lands, a brass fanfare, and a somber sting.
+  thud() { if (!this.ctx) return; const t = this.t; this.tone(0, t, 0.5, 90, 'sine', 1, 38); this.burst(0, t, 0.18, 260, 'lowpass', 0.9); },
+  tick() { if (!this.ctx) return; this.tone(0, this.t, 0.04, 1900, 'square', 0.035); },
+  pop() { if (!this.ctx) return; const t = this.t; this.tone(0, t, 0.12, 520, 'triangle', 0.25, 1040); this.burst(0, t, 0.05, 3000, 'highpass', 0.12); },
+  fanfare() {
+    if (!this.ctx) return;
+    const c = this.ctx, t0 = this.t + 0.05;
+    // a rising major arpeggio on bright brass (two detuned saws through a lowpass that opens as each note speaks)
+    [[392, 0], [523, 0.13], [659, 0.26], [784, 0.39], [1047, 0.55]].forEach(([f, d], i) => {
+      const len = i === 4 ? 1.4 : 0.32;
+      for (const det of [-6, 6]) {
+        const o = c.createOscillator(), fl = c.createBiquadFilter(), g = c.createGain();
+        o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = det;
+        fl.type = 'lowpass'; fl.frequency.setValueAtTime(600, t0 + d); fl.frequency.exponentialRampToValueAtTime(3600, t0 + d + 0.08);
+        g.gain.setValueAtTime(0.0001, t0 + d); g.gain.exponentialRampToValueAtTime(0.13, t0 + d + 0.04); g.gain.setValueAtTime(0.13, t0 + d + len * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + len);
+        o.connect(fl); fl.connect(g); g.connect(this.out); o.start(t0 + d); o.stop(t0 + d + len + 0.05);
+      }
+    });
+    // a cymbal swell under the last note
+    const s = c.createBufferSource(), hf = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = this.noise; hf.type = 'highpass'; hf.frequency.value = 5000;
+    g.gain.setValueAtTime(0.0001, t0 + 0.2); g.gain.exponentialRampToValueAtTime(0.32, t0 + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.6);
+    s.connect(hf); hf.connect(g); g.connect(this.out); s.start(t0 + 0.2, Math.random()); s.stop(t0 + 2.7);
+  },
+  somber() {
+    if (!this.ctx) return;
+    const t0 = this.t + 0.05;
+    [[220, 0], [174.6, 0.45], [146.8, 0.9]].forEach(([f, d], i) => this.tone(0, t0 + d, i === 2 ? 2.2 : 0.6, f, 'triangle', 0.22));
+    this.tone(0, t0, 3.2, 55, 'sawtooth', 0.08, 50);
+  },
   // Title-screen ambience: night insects, a low jungle hum, far-off groans, thunder with the lightning.
   amb: null, ambOn: false,
   ambience(on) {
