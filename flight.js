@@ -337,6 +337,9 @@ function update(dt) {
   $('fDist').textContent = Math.max(0, Math.hypot(f.x - p.x, gyNow - p.y) / PX_PER_MILE).toFixed(1);
   const secs = Math.floor(s.done ? s.endT : s.t); $('fTime').textContent = Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
   setBar('fHull', s.hull); setBar('fFuel', s.fuel / s.fuelMax * 100);
+  const chip = $('fRival');
+  chip.classList.toggle('hidden', !rival);
+  if (rival) { const r = rivalPos(); chip.textContent = `${rival.label || 'Rival'}: ` + (r ? `${(Math.hypot(r.x - p.x, r.y - p.y) / PX_PER_MILE).toFixed(1)} mi away` : rival.status || 'not in the air yet'); }
   $('fThr').textContent = Math.round(s.thr * 100) + '%'; $('fKts').textContent = Math.round(s.speed * 0.55);
 }
 
@@ -556,7 +559,7 @@ function drawRadar() {
 // where your rival is right now: an online player's last reported position, or along the bot's planned path
 function rivalPos() {
   if (!rival) return null;
-  if (rival.pos) return rival.pos;
+  if (rival.pos) return performance.now() - (rival.posAt || 0) < 3000 ? rival.pos : null;
   if (rival.plan && rival.startedAt) {
     const k = (performance.now() - rival.startedAt) / 1000 / rival.plan.time;
     if (k < 0) return null;
@@ -576,12 +579,30 @@ function drawRival() {
   ctx.fillText(rival.label || 'RIVAL', r.x, r.y - 70); ctx.restore();
 }
 
+function drawRivalArrow(cam, zoom) {
+  const r = rivalPos(); if (!r) return;
+  const sx = (r.x - cam.x) * zoom + W / 2, sy = (r.y - cam.y) * zoom + H / 2, m = 52 * dpr;
+  if (sx > m && sx < W - m && sy > m && sy < H - m) return;   // on screen: you can see the plane itself
+  const a = Math.atan2(sy - H / 2, sx - W / 2);
+  const ex = clamp(W / 2 + Math.cos(a) * W, m, W - m), ey = clamp(H / 2 + Math.sin(a) * H, m, H - m);
+  ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+  ctx.fillStyle = '#5ec8e5'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2 * dpr;
+  ctx.beginPath(); ctx.moveTo(20 * dpr, 0); ctx.lineTo(-12 * dpr, -13 * dpr); ctx.lineTo(-5 * dpr, 0); ctx.lineTo(-12 * dpr, 13 * dpr); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  const miles = (Math.hypot(r.x - state.plane.x, r.y - state.plane.y) / PX_PER_MILE).toFixed(1);
+  ctx.save(); ctx.font = `700 ${12 * dpr}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#5ec8e5';
+  ctx.shadowColor = '#000'; ctx.shadowBlur = 4 * dpr;
+  ctx.fillText(`${rival.label || 'RIVAL'} ${miles} mi`, clamp(ex - Math.cos(a) * 34 * dpr, 50 * dpr, W - 50 * dpr), clamp(ey - Math.sin(a) * 26 * dpr, 30 * dpr, H - 20 * dpr));
+  ctx.restore();
+}
+
 function draw() {
   const s = state, w = s.world, p = s.plane;
   const r = canvas.getBoundingClientRect();
   dpr = Math.min(2, devicePixelRatio || 1);
   if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) { canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); }
   W = canvas.width; H = canvas.height;
+  if (!W || !H) return;   // hidden behind a menu: nothing to draw
   const zoom = clamp(Math.min(r.width, r.height) / 1350, 0.38, 0.8) * dpr;
   if (s.intro > 0.7) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(drawSide(1 - (s.intro - 0.7) / (INTRO - 0.7), performance.now() / 1000), 0, 0); return; }
   const shx = (Math.random() - 0.5) * s.shake * dpr, shy = (Math.random() - 0.5) * s.shake * dpr;
@@ -612,8 +633,9 @@ function draw() {
   const planeAt = (x, y, shadow) => {
     ctx.save(); ctx.translate(x, y); ctx.scale(PLANE_SCALE, PLANE_SCALE);
     ctx.rotate(p.rot); ctx.scale(1, 1 - Math.abs(s.bank) * 0.22); ctx.rotate(-p.rot);   // wings foreshorten when banked
-    if (shadow) ctx.filter = 'brightness(0) opacity(0.28) blur(2px)';
-    G.Planes.draw(ctx, drawn, s.t);
+    // the shadow is a flat silhouette (canvas filters don't work in Safari, which drew it as a second plane)
+    if (shadow) G.Planes.silhouette(ctx, drawn, 'rgba(0,0,0,0.28)');
+    else G.Planes.draw(ctx, drawn, s.t);
     ctx.restore();
   };
   planeAt(p.x - 90, p.y + 140, true);
@@ -645,6 +667,7 @@ function draw() {
   G.Scene.overlay(ctx, W, H, 0.62);
   if (s.intro > 0) { ctx.globalAlpha = clamp(s.intro / 0.7, 0, 1); ctx.drawImage(drawSide(1, performance.now() / 1000), 0, 0); ctx.globalAlpha = 1; return; }
   drawArrow(s.cam, zoom);
+  drawRivalArrow(s.cam, zoom);
   drawRadar();
 }
 
@@ -726,7 +749,8 @@ G.Flight = {
   },
   stop() { running = false; stopAudio(); $('flight').classList.add('hidden'); $('fMsg').classList.remove('on'); },
   setRival(r) { rival = r; },
-  rivalPos(pos) { if (rival) rival.pos = pos; },
+  rivalPos(pos) { if (rival) { rival.pos = pos; rival.posAt = performance.now(); } },
+  setRivalStatus(text) { if (rival) rival.status = text; },
   botPlan,
   get running() { return running; },
   debug() { return state; },

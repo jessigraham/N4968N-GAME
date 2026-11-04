@@ -256,6 +256,13 @@ G.Planes = {
     body(ctx, p, T, t);
     ctx.restore();
   },
+  // a flat dark silhouette of the plane (its shadow), drawn without canvas filters so it works in every browser
+  silhouette(ctx, p, fill) {
+    const T = TYPES[p.kind], sc = (T.scale || 1) * K;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(sc, sc);
+    silhouette(ctx, T, fill);
+    ctx.restore();
+  },
   // points along the fuselage you can't walk through (world coordinates)
   solid(p) {
     const T = TYPES[p.kind], sc = (T.scale || 1) * K, c = Math.cos(p.rot), s = Math.sin(p.rot);

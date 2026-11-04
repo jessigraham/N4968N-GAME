@@ -423,7 +423,7 @@ Net.onMsg = m => {
   else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
   else if (m.t === 'fpos') { G.Flight.rivalPos({ x: m.x, y: m.y, h: m.h }); }
-  else if (m.t === 'flown') { if (opp) { opp.flight = m.r; opp.gateT = m.gateT; } }
+  else if (m.t === 'flown') { if (opp) { opp.flight = m.r; opp.gateT = m.gateT; } G.Flight.rivalPos(null); }
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') rivalBoarded(m.plane, m.jungle);
@@ -432,9 +432,21 @@ Net.onMsg = m => {
 };
 Net.onOpen = () => {
   Net.send({ t: 'hello', mode: Net.role === 'host' ? modeKey : undefined });
-  setStatus(Net.role === 'host' ? '#inviteStatus' : '#joinStatus', 'Connected! Here comes the story…');
-  setTimeout(startStory, 1400);
+  const screen = $('#menu').dataset.screen;
+  if (screen === 'invite' || screen === 'join') {
+    setStatus(Net.role === 'host' ? '#inviteStatus' : '#joinStatus', 'Friend connected ✓ Here comes the story…', 'ok');
+    clearTimeout(storyT); storyT = setTimeout(() => { if (mode === 'online' && ['invite', 'join'].includes($('#menu').dataset.screen)) startStory(); }, 1400);
+  } else {
+    // the friend reloaded and came back while we're still before the race: catch them up
+    oppGone = false; ready.them = false;
+    if (myChar) Net.send({ t: 'pick', char: myChar });
+    if (ready.me) Net.send({ t: 'ready', char: myChar });
+    updateRival();
+  }
 };
+// only before the race can a friend who reloaded take their seat back
+Net.canReplace = () => state === 'menu';
+let storyT = 0;
 
 // ---------- The beginning: story → researcher → path → airstrip (each player on their own device) ----------
 let oppChar = null, ready = { me: false, them: false };
@@ -504,6 +516,7 @@ function rivalBoarded(plane, jungle) {
 let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0;
 function startJungle(seed) {
   currentSeed = seed;
+  Net.forget();   // once the race is on, a reload starts fresh
   rivalBoardedAt = null; oppPlane = null;
   myJungle = { time: 0, deaths: 0, kills: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
   wantAgain = { me: false, them: false }; againMsg = '';
@@ -547,14 +560,16 @@ Net.onClose = () => {
   if (state === 'menu' && ready.me) { mode = 'solo'; beginRace(); }   // was waiting at the airstrip
 };
 Net.onStatus = (kind, text) => {
-  const el = Net.role === 'host' ? '#inviteStatus' : '#joinStatus';
-  setStatus(el, text, kind === 'error');
-  if (Net.role === 'host' && Net.code) {
+  const el = Net.lastRole === 'host' ? '#inviteStatus' : '#joinStatus';
+  setStatus(el, text, kind === 'error' || kind === 'timeout' ? true : kind === 'connected' ? 'ok' : false);
+  $('#inviteRetry').classList.toggle('hidden', !(Net.lastRole === 'host' && (kind === 'error' || kind === 'timeout')));
+  $('#joinRetry').classList.toggle('hidden', !(Net.lastRole === 'guest' && (kind === 'error' || kind === 'timeout')));
+  if (Net.lastRole === 'host' && Net.code) {
     $('#inviteCode').textContent = Net.code;
     $('#inviteLink').value = Net.inviteLink(Net.code);
   }
 };
-function setStatus(sel, text, err) { const el = $(sel); el.textContent = text; el.classList.toggle('err', !!err); }
+function setStatus(sel, text, err) { const el = $(sel); el.textContent = text; el.classList.toggle('err', err === true); el.classList.toggle('ok', err === 'ok'); }
 
 function maybeRematch() {
   if (Net.role === 'host' && wantAgain.me && wantAgain.them && Net.connected()) {
@@ -972,7 +987,7 @@ function hideEnding() {
 }
 
 function toMenu() {
-  Net.leave();
+  Net.leave(true);
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   me = newPlayer(0); opp = null;
   G.Story.stop(); G.Jungle.stop(); hideEnding();
@@ -986,8 +1001,8 @@ function toMenu() {
   showScreen('home');
 }
 
-$('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'solo'; startStory(); });
-$('#goBot').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(); mode = 'bot'; startStory(); });
+$('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'solo'; startStory(); });
+$('#goBot').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'bot'; startStory(); });
 $('#goInvite').addEventListener('click', () => {
   Sfx.init(); mode = 'online';
   $('#inviteCode').textContent = '····'; $('#inviteLink').value = '';
@@ -995,11 +1010,15 @@ $('#goInvite').addEventListener('click', () => {
   Net.host();
 });
 $('#goJoin').addEventListener('click', () => { Sfx.init(); mode = 'online'; showScreen('join'); setStatus('#joinStatus', ''); $('#joinCode').focus(); });
-document.querySelectorAll('#menu .back').forEach(b => b.addEventListener('click', () => { Net.leave(); mode = 'solo'; showScreen('home'); }));
+document.querySelectorAll('#menu .back').forEach(b => b.addEventListener('click', () => { Net.leave(true); mode = 'solo'; history.replaceState(null, '', location.pathname); showScreen('home'); }));
+$('#inviteRetry').addEventListener('click', () => { $('#inviteRetry').classList.add('hidden'); Net.retry(); });
+$('#joinRetry').addEventListener('click', () => { $('#joinRetry').classList.add('hidden'); Sfx.init(); Net.retry(); });
 $('#joinBtn').addEventListener('click', () => {
   const code = $('#joinCode').value.trim().toUpperCase();
   if (code.length !== 4) { setStatus('#joinStatus', 'The code has 4 letters.', true); return; }
-  Sfx.init(); goFullscreen(); mode = 'online'; Net.join(code);
+  Sfx.init(); goFullscreen(); mode = 'online';
+  history.replaceState(null, '', location.pathname + '?join=' + code);   // a reload comes back to this race
+  Net.join(code);
 });
 $('#joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#joinBtn').click(); });
 $('#copyBtn').addEventListener('click', async () => {
@@ -1089,6 +1108,10 @@ function frame(now) {
   draw();
 }
 function draw() {
+  if (G.Flight.running && opp) {
+    G.Flight.setRivalStatus(oppGone ? 'left the race' : opp.flight ? (opp.flight.win ? 'through the gate!' : 'went down in the storm')
+      : opp.airborne ? 'taking off…' : opp.overrun ? 'left on the strip' : rivalBoardedAt !== null || oppPlane ? 'still in the cockpit' : 'still in the jungle');
+  }
   const rem = RACE_TIME - raceT;
   $('#time').textContent = G.Flight.running ? fmt(G.Flight.debug().t) : state === 'jungle' ? fmt(Math.max(0, M().jungleClock - G.Jungle.elapsed())) : fmt(state === 'menu' ? M().cockpitClock : rem);
   $('#timer').classList.toggle('danger', state === 'race' && rem < 20 && !G.Flight.running && !me.airborne);
@@ -1124,11 +1147,17 @@ document.querySelectorAll('#charPick button').forEach(b => b.addEventListener('c
 pickChar(myChar);
 fitAll();
 const joinParam = new URLSearchParams(location.search).get('join');
-if (joinParam) {
+const saved = Net.remembered();
+if (saved.host && !joinParam) {
+  // the host reloaded the invite screen: keep the same code so the friend's link still works
+  mode = 'online'; showScreen('invite'); Net.host(saved.host);
+} else if (joinParam) {
   mode = 'online';
   showScreen('join');
-  $('#joinCode').value = joinParam.toUpperCase().slice(0, 4);
-  setStatus('#joinStatus', 'You were invited! Press Join to connect.');
+  const code = joinParam.toUpperCase().slice(0, 4);
+  $('#joinCode').value = code;
+  if (saved.join === code) Net.join(code);   // a reload after pressing Join reconnects by itself
+  else setStatus('#joinStatus', 'You were invited! Press Join to connect.');
 } else showScreen('home');
 
 // Handy for testing from the browser console.

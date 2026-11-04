@@ -23,6 +23,7 @@ The game opens on the title screen. From there:
 1. Choose **Invite a player**. You get a 4-letter code and a link.
 2. Send the link (Copy or Share) to your friend's phone or computer, or read them the code.
 3. Your friend opens the link (or chooses **Join with a code**) and presses **Join**.
+   Both screens say **Friend connected ✓** before the story starts. It doesn't matter who gets there first, and reloading either page reconnects with the same code. If nothing happens within 15 seconds, press **Try again** (the code stays the same).
 4. Once they've joined, you each go through the story and choose your own researcher. When both of you reach the airstrip, the race starts together. You see your cockpit large and theirs live in a small window in the corner, hands and all.
 
 On a phone, turn it sideways.
@@ -65,7 +66,7 @@ In the jungle, zombies trickle in, come in waves at half time and at 80%, and po
 - **Computer:** left and right arrows (or A and D) to bank, up and down arrows (or W and S) for throttle. The gold arrow points to the finish gate, and the weather radar shows the storm.
 - **Phone:** bank buttons bottom-left, throttle buttons bottom-right.
 - **The modes:** Clear Skies has a smaller storm, plenty of fuel and a wide blue gate. Crosswind has a bigger storm, birds, gusts and a narrow gold gate in a crosswind. Mayday has two storm cells, thin fuel, many birds and a tight red gate that drifts.
-- Online and against the bot, you both fly the same storm and see each other on the map and the radar. Running out of fuel or losing the airframe means you're out. If nobody makes it, nobody escapes.
+- Online and against the bot, you both fly the same storm and see each other on the map and the radar. When your rival is off screen, an arrow at the edge points to them with their distance, and a chip at the top says where they are (still in the cockpit, taking off, or how many miles away). Running out of fuel or losing the airframe means you're out. If nobody makes it, nobody escapes.
 
 ### The winner screen
 
