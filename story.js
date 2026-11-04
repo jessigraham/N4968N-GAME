@@ -32,7 +32,7 @@ const BIOS = {
     line: 'I know these trails better than anyone. Let’s go. Now!',
     place: 'The river camp', scene: 'river', title: 'Grab your gear.',
     text: 'The river is loud tonight. Not loud enough to cover the footsteps in the trees.',
-    items: ['Trail map', 'Your hat'],
+    items: ['Trail map', 'Your bandana'],
   },
   elias: {
     teaser: 'Talks to his ferns. They talk back.',

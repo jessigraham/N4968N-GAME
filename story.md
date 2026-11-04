@@ -28,8 +28,8 @@ Only one way off this island. Wheels up, before they find you.
 Menu: 1 player (practice) or 2 players (invite code; the other player joins on their own phone or PC). Each player then picks their own character:
 
 - Female botanist: **Dr. Ivy Thorne** (white lab coat)
-- Female jungle explorer: **Wren "Riptide" Calloway** (khaki field gear)
-- Male botanist: **Dr. Elias Fernsby** (lab coat, carries a fern)
+- Female jungle explorer: **Wren "Riptide" Calloway** (olive vest, rust bandana, rope and machete)
+- Male botanist: **Dr. Elias Fernsby** (silver hair, green cardigan, bow tie, carries a fern)
 - Male jungle explorer: **Kip "Compass" Monroe** (safari gear, carries a frog)
 
 ## 3. Choose your path
