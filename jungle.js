@@ -210,7 +210,7 @@ function tryIsland(seed, cfg, lenient) {
     const p = pick(far.length ? far : trailPts);
     const wake = i < cfg.zombies * cfg.startAwake ? 0 : R() * cfg.jungleClock * 0.5;
     zombies.push({ x: p.x, y: p.y, hx: p.x, hy: p.y, tx: p.x, ty: p.y, ph: R() * TAU, limp: R() < 0.5, hunch: (R() - 0.5) * 0.4,
-      coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0, wake });
+      coat: ['lab', 'khaki', 'rags'][Math.floor(R() * 3)], cool: 0, wake, hp: (cfg.zombieHP || 3) + (R() < (cfg.toughChance || 0) ? 1 : 0) });
   }
 
   // parked planes on both sides of the strip: two that fly, three that never will
@@ -311,8 +311,10 @@ function update(dt) {
   for (const [k, n, text] of [[0.5, cfg.wave, 'Branches snap all around you. More of them are coming…'], [0.8, cfg.wave, 'A second wave! They’re closing in on the trails.'], [1, cfg.pour, 'THE HORDE IS IN THE JUNGLE. RUN FOR THE PLANES!']]) {
     if (t >= clock * k && !me['wave' + k]) { me['wave' + k] = true; spawnZombies(n, k === 1); say(text, '#ff6b6b', 3.5); G.Sfx.groan(0.3); }
   }
+  world.zombies = world.zombies.filter(z => !z.dead || t - z.dead < 1.6);
   for (const z of world.zombies) {
     if (t < z.wake) continue;
+    if (z.dead) { z.x += (z.kx || 0) * dt; z.y += (z.ky || 0) * dt; z.kx *= Math.pow(0.02, dt); z.ky *= Math.pow(0.02, dt); continue; }
     // knocked back or stunned zombies don't move under their own power
     z.x += (z.kx || 0) * dt; z.y += (z.ky || 0) * dt;
     z.kx = (z.kx || 0) * Math.pow(0.03, dt); z.ky = (z.ky || 0) * Math.pow(0.03, dt);
@@ -334,7 +336,7 @@ function update(dt) {
       z.windup = t + cfg.counterWindow;
       // on Mayday they sometimes come at you two at a time
       if (Math.random() < cfg.pairLunge) {
-        const buddy = world.zombies.find(o => o !== z && !o.windup && t >= o.wake && Math.hypot(o.x - me.x, o.y - me.y) < 320);
+        const buddy = world.zombies.find(o => o !== z && !o.dead && !o.windup && t >= o.wake && Math.hypot(o.x - me.x, o.y - me.y) < 320);
         if (buddy) { buddy.windup = t + cfg.counterWindow; buddy.x = me.x + (me.x - z.x) * 0.9; buddy.y = me.y + (me.y - z.y) * 0.9; }
       }
       continue;
@@ -443,13 +445,15 @@ function botUpdate(dt) {
   for (const c of world.checkpoints) if (Math.hypot(c.x - b.x, c.y - b.y) < 90) b.cp = c;
   // zombies in its way: it swings, and sometimes misses
   for (const z of world.zombies) {
-    if (t < z.wake || t < (z.stunUntil || 0) || t < (z.botCool || 0)) continue;
-    if (Math.hypot(z.x - b.x, z.y - b.y) > 70) continue;
+    if (t < z.wake || z.dead || Math.hypot(z.x - b.x, z.y - b.y) > 80) continue;
+    if (t >= (b.strikeReady || 0)) {   // it swings to the same rhythm you do, and sometimes misses
+      b.strikeReady = t + cfg.strikeCooldown * 1.4;
+      if (Math.random() < cfg.botFight) { strike(z, 1, b.x, b.y, 0.45, 230); if (!z.dead) pop(z.x, z.y - 80, 'HIT!', '#5ec8e5'); }
+    }
+    if (z.dead || t < (z.stunUntil || 0) || t < (z.botCool || 0)) continue;
     z.botCool = t + 2.5;
-    if (Math.random() < cfg.botFight) {
-      z.stunUntil = t + 1.2; const a = Math.atan2(z.y - b.y, z.x - b.x); z.kx = Math.cos(a) * 500; z.ky = Math.sin(a) * 500;
-      pop(z.x, z.y - 80, 'WHACK!', '#5ec8e5');
-    } else {
+    if (Math.random() < cfg.botFight) { strike(z, 1, b.x, b.y, 1.0, 400); }
+    else {
       b.health -= cfg.bite;
       if (b.health <= 0) {
         b.deaths++; b.deadUntil = t + 2.6; b.respawn = true;
@@ -479,15 +483,30 @@ const SORRY = ['Sorry! So sorry!', 'Pardon me!', 'Nothing personal!', 'Oh dear, 
 let floats = [];
 function pop(x, y, text, color) { floats.push({ x, y, text, color, life: 1.2 }); }
 
+// one hit on a zombie: it staggers back with a flash; the last hit brings it down
+function strike(z, dmg, fromX, fromY, stun, knock) {
+  z.maxHp = z.maxHp ?? (z.hp ?? opts.mode.zombieHP);
+  z.hp = (z.hp ?? opts.mode.zombieHP) - dmg;
+  z.hitAt = t; z.windup = 0; z.cool = t + 1.2; z.stunUntil = Math.max(z.stunUntil || 0, t + stun);
+  const a = Math.atan2(z.y - fromY, z.x - fromX);
+  if (knock) { z.kx = Math.cos(a) * knock; z.ky = Math.sin(a) * knock; }
+  if (z.hp <= 0) {
+    z.dead = t; z.kx = Math.cos(a) * 160; z.ky = Math.sin(a) * 160;
+    pop(z.x, z.y - 80, 'DOWN!', '#ffd970');
+    G.Sfx.groan(0.12);
+    if (Math.random() < opts.mode.dropChance) world.items.push({ kind: Math.random() < 0.5 ? 'spray' : 'med', x: z.x, y: z.y });
+  }
+}
+
 function attack() {
   if (!running || t < me.attackReady || t < me.deadUntil || t < me.outUntil) return;
   const w = WEAPON[opts.char] || WEAPON.ivy, cfg = opts.mode;
-  me.attackReady = t + cfg.counterCooldown;
+  me.attackReady = t + cfg.strikeCooldown;
   me.attackAt = t;
   const dir = Math.atan2(me.diry, me.dirx);
   let hits = 0, counters = 0;
   for (const z of world.zombies) {
-    if (t < z.wake) continue;
+    if (t < z.wake || z.dead) continue;
     const d = Math.hypot(z.x - me.x, z.y - me.y);
     if (d > w.reach) continue;
     let da = Math.atan2(z.y - me.y, z.x - me.x) - dir;
@@ -496,9 +515,9 @@ function attack() {
     hits++;
     const countered = !!z.windup;
     if (countered) counters++;
-    z.windup = 0; z.cool = t + 1.5; z.stunUntil = t + w.stun;
-    if (w.knock) { const a = Math.atan2(z.y - me.y, z.x - me.x); z.kx = Math.cos(a) * w.knock; z.ky = Math.sin(a) * w.knock; }
-    pop(z.x, z.y - 80, countered ? 'COUNTERED!' : opts.char === 'kip' ? 'STUNNED' : 'WHACK!', countered ? '#7bed9f' : '#fff');
+    // every strike lands a hit; catching a lunge is a perfect counter worth double and a longer stagger
+    strike(z, countered ? 2 : 1, me.x, me.y, opts.char === 'kip' ? w.stun : countered ? w.stun : 0.45, countered ? w.knock : w.knock * 0.45);
+    if (!z.dead) pop(z.x, z.y - 80, countered ? 'PERFECT COUNTER!' : opts.char === 'kip' ? 'STUNNED' : 'HIT!', countered ? '#7bed9f' : '#fff');
   }
   // sounds and character touches
   const S = G.Sfx;
@@ -560,7 +579,8 @@ function spawnZombies(n, aggro) {
       const x = me.x + Math.cos(a) * r, y = me.y + Math.sin(a) * r;
       if (blocked(x, y, 12)) continue;
       world.zombies.push({ x, y, hx: x, hy: y, tx: me.x, ty: me.y, ph: Math.random() * TAU, limp: Math.random() < 0.5,
-        hunch: (Math.random() - 0.5) * 0.4, coat: ['lab', 'khaki', 'rags'][i % 3], cool: 0, wake: 0, aggro });
+        hunch: (Math.random() - 0.5) * 0.4, coat: ['lab', 'khaki', 'rags'][i % 3], cool: 0, wake: 0, aggro,
+        hp: opts.mode.zombieHP + (Math.random() < opts.mode.toughChance ? 1 : 0) });
       break;
     }
   }
@@ -695,8 +715,24 @@ function draw() {
   for (const tr of world.trees) if (inView(tr.x, tr.y, 80)) stand.push({ y: tr.y, f: () => drawTree(tr) });
   for (const p of world.planes) if (inView(p.x, p.y, 320)) stand.push({ y: p.y - 260, f: () => drawPlane(p) });
   for (const z of world.zombies) if (t >= z.wake && inView(z.x, z.y, 80)) stand.push({ y: z.y, f: () => {
+    if (z.dead) {   // collapses and fades away
+      const k = Math.min(1, (t - z.dead) / 0.5);
+      ctx.save(); ctx.globalAlpha = Math.max(0, 1 - (t - z.dead) / 1.6);
+      ctx.translate(z.x, z.y); ctx.rotate((z.face || 1) * k * 1.45); ctx.scale(z.face || 1, 1);
+      G.drawZombie(ctx, 0, 0, 64, z, z.dead, false, 0.2); ctx.restore();
+      return;
+    }
     ctx.save(); ctx.translate(z.x, z.y); ctx.scale(z.face || 1, z.windup ? 0.86 : 1);
+    if (t - (z.hitAt ?? -9) < 0.12) ctx.translate((Math.random() - 0.5) * 8, 0);   // stagger
     G.drawZombie(ctx, 0, 0, 64, z, t, !!z.windup, 0); ctx.restore();
+    if (t - (z.hitAt ?? -9) < 0.12) {   // hit flash
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.ellipse(z.x, z.y - 34, 18, 34, 0, 0, TAU); ctx.fill();
+    }
+    if (z.hitAt !== undefined) {   // health bar once it's been hit
+      const w2 = 40, k = clamp(z.hp / z.maxHp, 0, 1);
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(z.x - w2 / 2 - 1, z.y - 94, w2 + 2, 7);
+      ctx.fillStyle = k > 0.5 ? '#e0c050' : '#e05040'; ctx.fillRect(z.x - w2 / 2, z.y - 93, w2 * k, 5);
+    }
     if (z.windup) {   // about to lunge: a red ring and a "!"
       ctx.strokeStyle = 'rgba(255,60,60,0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(z.x, z.y, 26, 10, 0, 0, TAU); ctx.stroke();
       ctx.fillStyle = '#ff3b3b'; ctx.font = '900 30px system-ui'; ctx.textAlign = 'center'; ctx.fillText('!', z.x, z.y - 74 + Math.sin(t * 30) * 2);
@@ -857,7 +893,7 @@ function hud() {
   ctx.fillText('Stamina (Shift to sprint)', pad + 186 * u, pad + 53 * u);
   if (t < me.sprayUntil) ctx.fillText(`Bug spray ${Math.ceil(me.sprayUntil - t)}s`, pad + 186 * u, pad + 32 * u);
   // the weapon and its cooldown ring (bottom right on a computer; phones have the attack button)
-  const c = G.CHARS[opts.char], ready = clamp(1 - (me.attackReady - t) / opts.mode.counterCooldown, 0, 1);
+  const c = G.CHARS[opts.char], ready = clamp(1 - (me.attackReady - t) / opts.mode.strikeCooldown, 0, 1);
   const wx = W - 60 * u, wy = H - 60 * u, wr = 34 * u;
   if (!matchMedia('(pointer: coarse)').matches) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, TAU); ctx.fill();

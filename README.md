@@ -68,13 +68,13 @@ Each researcher has a weapon:
 - **Dr. Elias Fernsby, The Fern:** swung by the pot like a club. The fern is always fine, and he always apologizes.
 - **Kip "Compass" Monroe, Camera Flash:** a blinding flash that freezes zombies for two seconds.
 
-When a zombie is about to lunge, it crouches under a red **!**. Press **Space** (or the weapon button on a phone) in time to counter. The weapon then needs a moment to recharge, shown by the ring around its icon. If you miss, you're bitten and lose health; high fever also drains health slowly. Med kits restore health. At zero health you go down, then wake at the last **checkpoint lantern** you passed with full health. The clock keeps running, though. Online, your rival hears about it.
+Press **Space** (or the weapon button on a phone) to strike whenever a zombie is in reach. It takes several hits to bring one down (2 on Clear Skies, 3 on Crosswind, 4 on Mayday, and an occasional tougher one takes an extra hit), shown by a little health bar over its head. Each hit staggers it back, and there's a short beat between strikes (the ring around the weapon icon). When a zombie is about to lunge, it crouches under a red **!**. Strike then for a **perfect counter**, which does double damage. Defeated zombies collapse and fade, and sometimes drop bug spray or a med kit. If you miss, you're bitten and lose health; high fever also drains health slowly. Med kits restore health. At zero health you go down, then wake at the last **checkpoint lantern** you passed with full health. The clock keeps running, though. Online, your rival hears about it.
 
-| Mode | Time to react | Recharge | Bite |
-|---|---|---|---|
-| Clear Skies | 0.8 s | 1 s | −25 health |
-| Crosswind | 0.5 s | 1.5 s | −34 health |
-| Mayday | 0.3 s | 2 s | −50 health, and they sometimes lunge in pairs |
+| Mode | Hits to defeat | Between strikes | Time to counter a lunge | Bite |
+|---|---|---|---|---|
+| Clear Skies | 2 | 0.35 s | 0.8 s | −25 health |
+| Crosswind | 3 | 0.42 s | 0.5 s | −34 health |
+| Mayday | 4 | 0.5 s | 0.3 s | −50 health, and they sometimes lunge in pairs |
 
 ### Working the cockpit
 

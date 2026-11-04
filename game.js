@@ -17,6 +17,8 @@ const MODES = G.MODES = {
     smokeAfter: 20, signs: true, radio: 1.4, planeHint: true,
     // fighting back: seconds to react to a lunge, seconds between attacks, chance two lunge together
     counterWindow: 0.8, counterCooldown: 1, pairLunge: 0,
+    // hits to bring a zombie down, seconds between strikes, chance of a tougher one (+1 hit), chance it drops supplies
+    zombieHP: 2, strikeCooldown: 0.35, toughChance: 0.1, dropChance: 0.35,
     // health: lost per bite, lost per second while the fever is 80%+, fever after respawning
     bite: 25, feverDrain: 1.5, respawnFever: 30,
     // the bot rival: jungle speed (1 = your running speed), chance of a wrong turn, seconds per cockpit action,
@@ -30,6 +32,7 @@ const MODES = G.MODES = {
     swarms: 9, swarmFever: 9, zombies: 11, zombieSpeed: 1, startAwake: 0.6, wave: 5, pour: 12,
     smokeAfter: 45, signs: true, radio: 1,
     counterWindow: 0.5, counterCooldown: 1.5, pairLunge: 0,
+    zombieHP: 3, strikeCooldown: 0.42, toughChance: 0.15, dropChance: 0.25,
     bite: 34, feverDrain: 2.5, respawnFever: 30,
     routeRange: [2200, 3200],
     botSpeed: 0.85, botDetour: 0.3, botStep: 1.05, botMistake: 0.14, botFight: 0.7,
@@ -40,6 +43,7 @@ const MODES = G.MODES = {
     swarms: 15, swarmFever: 12, zombies: 15, zombieSpeed: 1.35, startAwake: 1, wave: 7, pour: 16,
     smokeAfter: 90, signs: false, radio: 0.45,
     counterWindow: 0.3, counterCooldown: 2, pairLunge: 0.35,
+    zombieHP: 4, strikeCooldown: 0.5, toughChance: 0.25, dropChance: 0.15,
     bite: 50, feverDrain: 4, respawnFever: 30,
     routeRange: [2600, 4000],
     botSpeed: 1.0, botDetour: 0.12, botStep: 0.6, botMistake: 0.04, botFight: 0.9,
