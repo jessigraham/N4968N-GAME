@@ -143,26 +143,121 @@ function zombieDepth(z, p, t, T) {
   return z.z0 + (z.zEnd - z.z0) * Math.pow(k, 0.7) - p.dist;
 }
 
+// ---------- photo art for the cockpit (assets/cockpit and the jungle's ground textures) ----------
+const photos = {};
+const photo = src => photos[src] || (photos[src] = Object.assign(new Image(), { src }));
+const loaded = im => im.complete && im.naturalWidth > 0;
+['assets/cockpit/sky.webp', 'assets/cockpit/treeline.webp', 'assets/cockpit/panel.jpg', 'assets/cockpit/glare.jpg', 'assets/jungle/strip.jpg', 'assets/jungle/clear.jpg'].forEach(photo);
+const pats = new Map();
+function photoPattern(ctx, src) {
+  const key = src;
+  if (pats.has(key)) return pats.get(key);
+  const im = photo(src);
+  if (!loaded(im)) return null;
+  const pt = ctx.createPattern(im, 'repeat');
+  pats.set(key, pt);
+  return pt;
+}
+
+// The ground ahead in true perspective: each screen row is a slice of the dirt strip and the grass beside it,
+// at the depth that row looks at. As the plane rolls, the texture slides toward you, so the runway really moves.
+function photoGround(ctx, p, hy, camH, cx, W, L, R, bottom) {
+  const strip = photoPattern(ctx, 'assets/jungle/strip.jpg'), grass = photoPattern(ctx, 'assets/jungle/clear.jpg');
+  if (!strip || !grass || !strip.setTransform) return false;
+  const TILE = 1.6;   // world units per texture tile
+  for (let y = Math.ceil(hy + 1); y < bottom; y += 2) {
+    const z = camH / (y - hy);
+    if (z > 400) continue;
+    const s = W * 0.22 / z * TILE / 512, v = (z + p.dist) * 512 / TILE;
+    const m = new DOMMatrix().translate(cx, y).scale(s, s).translate(0, -v);
+    grass.setTransform(m); ctx.fillStyle = grass; ctx.fillRect(L, y, R - L, 2);
+    const half = W * 0.22 / z;   // the strip runs from x = -1 to x = 1
+    strip.setTransform(m); ctx.fillStyle = strip; ctx.fillRect(cx - half, y, half * 2, 2);
+  }
+  // the far end fades into the dusk haze, and the ground darkens toward you away from the sunset
+  const haze = ctx.createLinearGradient(0, hy, 0, hy + 70);
+  haze.addColorStop(0, 'rgba(150,90,110,0.85)'); haze.addColorStop(1, 'rgba(150,90,110,0)');
+  ctx.fillStyle = haze; ctx.fillRect(L, hy, R - L, 70);
+  const dusk = ctx.createLinearGradient(0, hy, 0, bottom);
+  dusk.addColorStop(0, 'rgba(40,20,50,0.15)'); dusk.addColorStop(1, 'rgba(20,10,25,0.45)');
+  ctx.fillStyle = dusk; ctx.fillRect(L, hy, R - L, bottom - hy);
+  return true;
+}
+// the jungle on both sides of the strip: one continuous photo treeline per side, receding in perspective.
+// It is drawn as thin vertical slices from the far end toward you; each slice samples the photo at its true
+// proportions, and the photo scrolls with the distance rolled, so the trees slide past as you speed up.
+const hazed = [];
+function hazeCopies(im) {
+  if (hazed.length) return hazed;
+  for (const a of [0, 0.25, 0.5, 0.7]) {   // dusk haze baked into copies, so it only tints the trees themselves
+    const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    if (a) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = `rgba(120,80,110,${a})`; g.fillRect(0, 0, c.width, c.height); }
+    hazed.push(c);
+  }
+  return hazed;
+}
+function photoTrees(ctx, p, t, hy, camH, sx, proj, L, R) {
+  const im = photo('assets/cockpit/treeline.webp');
+  if (!loaded(im)) return false;
+  const copies = hazeCopies(im), iw = im.naturalWidth, ih = im.naturalHeight;
+  const W = VW, TREE_H = 1.5;            // trees a bit taller than the strip is wide
+  const pxPerUnit = ih / TREE_H;         // photo pixels per world unit along the wall, keeping its proportions
+  for (const side of [-1, 1]) {
+    let prevX = null;
+    for (let z = 70; z > 0.6; z *= 0.93) {
+      const zn = z * 0.93;
+      const xa = sx(side * 2.3, z), xb = sx(side * 2.3, zn);
+      const w = Math.abs(xb - xa) + 1;
+      const h = W * 0.22 * TREE_H / z, gy = proj(z) + 3;
+      const left = Math.min(xa, xb);
+      if (left > R + 20 || left + w < L - 20) continue;
+      let u = ((z + p.dist) * pxPerUnit * (side < 0 ? 1 : 0.83) + (side < 0 ? 0 : iw * 0.5)) % iw;
+      const du = Math.max(1, (z - zn) * pxPerUnit);
+      if (u + du > iw) u = 0;
+      const lvl = z > 30 ? 3 : z > 15 ? 2 : z > 6 ? 1 : 0;
+      ctx.drawImage(copies[lvl], u, 0, du, ih, left, gy - h, w, h);
+      prevX = xb;
+    }
+    void prevX;
+  }
+  return true;
+}
+
 // ---------- the view out the windshield ----------
 function world(ctx, p, t, L, R) {
   const W = VW, winH = WIN, cx = 800;
+  const sky = photo('assets/cockpit/sky.webp');
+  const usePhoto = loaded(sky) && loaded(photo('assets/jungle/strip.jpg')) && loaded(photo('assets/jungle/clear.jpg')) && loaded(photo('assets/cockpit/treeline.webp'));
   const pitch = p.airborne ? Math.min(1, (t - p.finishT) * 0.8) * 0.22
     : p.rotT * 0.1 + (p.stall ? Math.abs(Math.sin(t * 14)) * 0.04 : 0);
-  const hy = winH * (0.6 + pitch);
+  const hy = winH * ((usePhoto ? 0.68 : 0.6) + pitch);   // the photo view sits the horizon a little lower, for more sky
   const camH = winH * 0.2 * (1 + p.alt * 3);
   const proj = z => hy + camH / z;
   const sx = (x, z) => cx + x * W * 0.22 / z;
 
   // the same island as the title and story: dusk sky, volcano, far hills, distant palms, fog, fireflies
   // (wide enough that the volcano sits right at the end of the strip)
-  const SH = 640, top = hy - 0.62 * SH;
-  const SW = Math.max((cx - L) / 0.245, (R - cx) / 0.755) + 40, left = cx - 0.245 * SW;
-  ctx.save(); ctx.translate(left, top);
-  G.Scene.paint(ctx, SW, SH, t, { backdrop: true, px: 0.9 });
-  ctx.restore();
-  ctx.fillStyle = '#15231a'; ctx.fillRect(L, hy + 18, R - L, 900);
-  // the dirt strip
+  if (usePhoto) {
+    // the dusk sky across the whole windshield, then the same volcano you saw from base camp, at the end of the strip
+    const grad = ctx.createLinearGradient(0, hy - 420, 0, hy + 10);
+    grad.addColorStop(0, '#2a2048'); grad.addColorStop(0.55, '#4a2f5c'); grad.addColorStop(0.85, '#a8554a'); grad.addColorStop(1, '#3a2230');
+    ctx.fillStyle = grad; ctx.fillRect(L, -900, R - L, hy + 910);
+    const sw = 760, sh = sw * sky.naturalHeight / sky.naturalWidth;
+    ctx.drawImage(sky, cx - sw / 2, hy + 14 - sh, sw, sh);
+    photoGround(ctx, p, hy, camH, cx, W, L, R, WIN + 60);
+    photoTrees(ctx, p, t, hy, camH, sx, proj, L, R);
+  } else {
+    const SH = 640, top = hy - 0.62 * SH;
+    const SW = Math.max((cx - L) / 0.245, (R - cx) / 0.755) + 40, left = cx - 0.245 * SW;
+    ctx.save(); ctx.translate(left, top);
+    G.Scene.paint(ctx, SW, SH, t, { backdrop: true, px: 0.9 });
+    ctx.restore();
+    ctx.fillStyle = '#15231a'; ctx.fillRect(L, hy + 18, R - L, 900);
+  }
   const zN = 0.3, zF = 80;
+  if (!usePhoto) {
+  // the dirt strip
   ctx.fillStyle = '#8b6a45';
   ctx.beginPath();
   ctx.moveTo(sx(-1, zF), proj(zF)); ctx.lineTo(sx(1, zF), proj(zF));
@@ -200,6 +295,18 @@ function world(ctx, p, t, L, R) {
       const xw = side * (2.5 + ((k * 37) % 7) / 10);
       if (sx(xw, z) < L - 200 || sx(xw, z) > R + 200) continue;
       G.Scene.palm(ctx, sx(xw, z), proj(z) - winH * 0.15 / z, winH * (0.42 + ((k * 13) % 5) / 14) / z, -side * 0.4, Math.sin(t * 0.8 + k), shade('#0e1a14', 1, haze * 0.8));
+    }
+  }
+  }
+  // edge markers along the strip (both looks)
+  if (usePhoto) {
+    const off = p.dist % 2;
+    for (let k = 0; k < 30; k++) {
+      const z = k * 2 + 1 - off;
+      if (z < zN + 0.05) continue;
+      const y = proj(z), sz = W * 0.012 / z;
+      ctx.fillStyle = `rgba(232,226,208,${clamp(1 - z / 50, 0.15, 0.9)})`;
+      ctx.fillRect(sx(-1.08, z) - sz, y - sz * 0.5, sz * 2, sz); ctx.fillRect(sx(1.08, z) - sz, y - sz * 0.5, sz * 2, sz);
     }
   }
   const mist = ctx.createLinearGradient(0, hy - 30, 0, hy + 60);
@@ -573,12 +680,31 @@ function panel(ctx, p, t, L, R, B, opt) {
   const kneeboard = B > 1300 && !opt.mini;
   interior(ctx, p, t, L, R, B, kneeboard);
   ctx.fillStyle = '#141416'; rr(ctx, 14, 438, VW - 28, 386, 26); ctx.fill();
+  // real crinkle-finish panel paint, lit warm from the windshield above and falling off toward your knees
+  const metal = photoPattern(ctx, 'assets/cockpit/panel.jpg');
+  if (metal) {
+    ctx.save(); rr(ctx, 14, 438, VW - 28, 386, 26); ctx.clip();
+    ctx.globalAlpha = 0.9; ctx.fillStyle = metal; ctx.fillRect(14, 438, VW - 28, 386); ctx.globalAlpha = 1;
+    const lightG = ctx.createLinearGradient(0, 438, 0, 824);
+    lightG.addColorStop(0, 'rgba(255,170,120,0.10)'); lightG.addColorStop(0.35, 'rgba(0,0,0,0)'); lightG.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = lightG; ctx.fillRect(14, 438, VW - 28, 386);
+    ctx.restore();
+  }
   // scuffs and scratches on the old panel paint
   ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
   for (let k = 0; k < 14; k++) { const x = 40 + (k * 211) % 1500, y = 450 + (k * 97) % 360; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 18 + (k % 4) * 9, y + 4 - (k % 3) * 3); ctx.stroke(); }
   // glareshield
-  ctx.fillStyle = '#0d0d0f';
+  const vinyl = photoPattern(ctx, 'assets/cockpit/glare.jpg');
+  ctx.fillStyle = vinyl || '#0d0d0f';
   ctx.beginPath(); ctx.moveTo(L, 412); ctx.quadraticCurveTo(800, 384, R, 412); ctx.lineTo(R, 466); ctx.quadraticCurveTo(800, 446, L, 466); ctx.closePath(); ctx.fill();
+  if (vinyl) {   // the sunset catching the top edge of the glareshield, and its shadow on the panel below
+    const sheen = ctx.createLinearGradient(0, 390, 0, 466);
+    sheen.addColorStop(0, 'rgba(255,160,120,0.18)'); sheen.addColorStop(0.3, 'rgba(0,0,0,0.25)'); sheen.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = sheen; ctx.fill();
+    const under = ctx.createLinearGradient(0, 462, 0, 520);
+    under.addColorStop(0, 'rgba(0,0,0,0.55)'); under.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = under; ctx.fillRect(14, 462, VW - 28, 58);
+  }
   for (let x = 60; x < VW; x += 150) screw(ctx, x, 478);
 
   // placards like a real panel

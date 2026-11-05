@@ -52,8 +52,11 @@ function target(p, ctrl) {
 }
 
 // Called when the player works a control. `hold` keeps the hand there until release().
+// If the hand is still out (on its way back, or on another control), it glides from where it is instead of
+// snapping back off screen first; that snap was the glitch when working controls quickly one after another.
 G.reach = (p, ctrl, hold) => {
-  p.hand = { ctrl, seq: (p.hand ? p.hand.seq : 0) + 1, start: performance.now(), hold: !!hold, release: 0, shaky: false };
+  const from = p.handAt && performance.now() - p.handAt.when < 120 ? { x: p.handAt.x, y: p.handAt.y, left: p.handAt.left } : null;
+  p.hand = { ctrl, seq: (p.hand ? p.hand.seq : 0) + 1, start: performance.now(), hold: !!hold, release: 0, shaky: false, from };
 };
 G.releaseHand = p => { if (p.hand && p.hand.hold) { p.hand.hold = false; p.hand.release = performance.now(); } };
 
@@ -98,10 +101,14 @@ G.drawHands = (ctx, p, t, opt) => {
     const leave = h.release ? (now - h.release) / 1000 : el - REACH - PRESS;
     k = leave < 0 ? 1 : 1 - easeIn(clamp(leave / BACK, 0, 1));
   }
-  if (k <= 0.001) return;
+  if (k <= 0.001) { p.handAt = null; return; }
   const left = tgt[0] < 560;
   const rest = left ? REST_L : REST_R;
-  let x = rest[0] + (tgt[0] - rest[0]) * k, y = rest[1] + (tgt[1] - rest[1]) * k;
+  // reaching out starts from where this same hand already was; heading back always goes to rest
+  const reaching = el < REACH;
+  const start = reaching && h.from && h.from.left === left ? [h.from.x, h.from.y] : rest;
+  let x = start[0] + (tgt[0] - start[0]) * k, y = start[1] + (tgt[1] - start[1]) * k;
+  if (!reaching && k < 1) { x = rest[0] + (tgt[0] - rest[0]) * k; y = rest[1] + (tgt[1] - rest[1]) * k; }
   // a quick press: the hand pushes in and squashes a little right after arriving
   const pressK = el > REACH ? clamp(1 - (el - REACH) / 0.14, 0, 1) : 0;
   const squash = 1 - 0.06 * pressK;
@@ -113,5 +120,6 @@ G.drawHands = (ctx, p, t, opt) => {
   const shake = h.shaky && el < 1 ? 7 : 0;
   const [jx, jy] = jitter(tremble + shake);
   drawHand(ctx, char, x + jx, y + jy, left, rot, squash);
+  p.handAt = { x, y, left, when: now };
 };
 })();
