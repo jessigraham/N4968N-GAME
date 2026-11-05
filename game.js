@@ -427,6 +427,7 @@ Net.onMsg = m => {
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
   else if (m.t === 'pos') { G.Jungle.setGhost({ ...m, char: oppChar || 'kip' }); }
   else if (m.t === 'boarded') rivalBoarded(m.plane, m.jungle);
+  else if (m.t === 'camp') { if (G.Camp) G.Camp.rivalPos(m); }
   else if (m.t === 'pick') { oppChar = m.char; updateRival(); }
   else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
@@ -467,8 +468,21 @@ function startStory() {
     showScreen('airstrip');
     updateRival();
     maybeStart();
-  });
+  }, packedOnline);
 }
+// Online, base camp is the waiting room: once your bag is packed you stay in camp until your rival is packed too.
+function packedOnline() {
+  if (mode !== 'online') return false;
+  if (!Net.connected()) { mode = 'solo'; return false; }
+  ready.me = true;
+  Net.send({ t: 'ready', char: myChar });
+  updateRival();
+  maybeStart();
+  return true;
+}
+// who walks around base camp with you
+G.campRival = () => mode === 'bot' && oppChar ? { char: oppChar, bot: true } : mode === 'online' ? { char: oppChar, bot: false } : null;
+G.campSend = pos => { if (mode === 'online') Net.send({ t: 'camp', char: myChar, ...pos }); };
 function pickBot() {   // one of the three researchers you didn't pick
   const others = Object.keys(CHARS).filter(c => c !== myChar);
   oppChar = others[Math.floor(Math.random() * others.length)];
@@ -486,6 +500,7 @@ function updateRival() {
   const who = oppChar ? CHARS[oppChar].name : null;
   const modeNote = Net.role === 'guest' ? ` · <span style="color:${M().color}">${M().name}</span>` : '';
   chip.innerHTML = (ready.them ? `Rival: <b>${who}</b> · at the airstrip` : who ? `Rival: <b>${who}</b> · getting ready` : 'Rival: reading the story…') + modeNote;
+  if (ready.me && G.Camp && G.Camp.running) G.Camp.wait(ready.them ? `${who} is packed too. Heading out…` : `Bag packed. Waiting for ${who || 'your rival'} to finish packing…`);
   $('#stripText').textContent = ready.them ? `${who} is here too. Get to your plane…` : `Waiting for ${who || 'your rival'} to reach the airstrip…`;
 }
 function maybeStart() {
@@ -557,7 +572,7 @@ Net.onClose = () => {
   setStatus('#joinStatus', 'The race host left.', true);
   $('#resStatus').textContent = 'Your rival left the race.';
   updateRival();
-  if (state === 'menu' && ready.me) { mode = 'solo'; beginRace(); }   // was waiting at the airstrip
+  if (state === 'menu' && ready.me) { mode = 'solo'; G.Story.stop(); beginRace(); }   // was waiting at the airstrip
 };
 Net.onStatus = (kind, text) => {
   const el = Net.lastRole === 'host' ? '#inviteStatus' : '#joinStatus';
@@ -847,10 +862,10 @@ function planBotFlight() {
 
 // ---------- The ending: fly-out over the island, then the winner and stats screen ----------
 const WIN_LINES = {
-  ivy: 'Cure’s in my pocket. Zombies in my rearview.',
-  wren: 'Eleven jungles. Never lost a guest. Not starting tonight.',
-  elias: 'Look, little guy. We’re flying!',
-  kip: 'Finally. A direction I’m sure of. Up.',
+  ivy: 'Mission complete. The cure is coming home.',
+  wren: 'Trail’s done. Riptide out.',
+  elias: 'Fern secure. Permission to cry.',
+  kip: 'First time I’ve ever known which way I’m going. Up.',
 };
 let againMsg = '';
 let endingShown = false, cardShown = false, playedWinFor = null, cardTimer = 0, statTimers = [];
@@ -1050,7 +1065,7 @@ $('#changeChar').addEventListener('click', () => {
   state = 'menu';
   document.body.classList.remove('playing');
   $('#quitBtn').classList.add('hidden');
-  G.Story.chooseAgain(c => { pickChar(c); if (mode === 'bot') pickBot(); }, () => startJungle(newSeed()));
+  G.Story.chooseAgain(c => { pickChar(c); if (mode === 'bot') pickBot(); }, () => startJungle(newSeed()), packedOnline);
 });
 $('#toMenu').addEventListener('click', toMenu);
 $('#quitBtn').addEventListener('click', toMenu);

@@ -32,10 +32,10 @@ On a phone, turn it sideways.
 
 When you lift off, the view pulls back over the island as your plane climbs past the volcano and the horde shrinks on the strip below. Then the winner's card slides in with their picture, their time, their mistakes and lives lost, and their line in their own voice:
 
-- **Dr. Ivy Thorne:** "Cure's in my pocket. Zombies in my rearview."
-- **Wren "Riptide" Calloway:** "Eleven jungles. Never lost a guest. Not starting tonight."
-- **Dr. Elias Fernsby:** "Look, little guy. We're flying!"
-- **Kip "Compass" Monroe:** "Finally. A direction I'm sure of. Up."
+- **Dr. Ivy Thorne:** "Mission complete. The cure is coming home."
+- **Wren "Riptide" Calloway:** "Trail's done. Riptide out."
+- **Dr. Elias Fernsby:** "Fern secure. Permission to cry."
+- **Kip "Compass" Monroe:** "First time I've ever known which way I'm going. Up."
 
 Online, both players see who won. If you didn't make it, the winner's card appears over your cockpit, with the zombies at the glass. **Fly again** runs the whole jungle and cockpit again. **Change researcher** (solo) lets you pick someone else.
 

@@ -96,12 +96,15 @@
     <div class="screen hidden" data-screen="how">
       <h2>How to play</h2>
       <ul class="rules">
-        <li>Race your rival to start your plane and take off before the zombies reach the airstrip (90 seconds).</li>
+        <li><b>Base camp:</b> look around with ← → (or drag), walk with ↑ ↓, and pack your two items with Space (or tap them).</li>
+        <li><b>The jungle:</b> run with the arrow keys or WASD, sprint with Shift, and use your weapon with Space. Strike a zombie when it flashes a red ! for a perfect counter. Find the hidden airstrip.</li>
+        <li><b>The cockpit:</b> race your rival to start your plane and take off before the zombies reach the airstrip (90 seconds).</li>
         <li>Work the real controls: tap switches, drag the throttle knob in, hold the key, pull back on the yoke. On a computer you can also use the keys on the white tags.</li>
         <li>Follow the checklist card <b>in order</b>. Out of order makes the engine sputter and costs 3 seconds.</li>
         <li>Prime 2 or 3 times. Too much floods the engine and you have to wait.</li>
         <li>Keep an eye on the fuel selector on the floor…</li>
         <li>Stuck? After a few seconds the control you need starts to glow.</li>
+        <li><b>The flight:</b> bank with ← →, set throttle with ↑ ↓, and follow the gold arrow. Stay out of the storm and away from birds. First through the finish gate wins.</li>
       </ul>
       <button type="button" class="back">Back</button>
     </div>
@@ -133,14 +136,6 @@
           <button id="bsBack" type="button" class="link">Choose someone else</button>
         </div>
       </div>
-    </div>
-    <!-- path scene -->
-    <div class="screen hidden" data-screen="path">
-      <p class="role" id="pathPlace"></p>
-      <h2 class="cine" id="pathTitle"></h2>
-      <p class="pathText" id="pathText"></p>
-      <div id="pathItems"></div>
-      <button id="pathRun" type="button" class="hero-btn" disabled>Run for the airstrip!</button>
     </div>
     <!-- online: waiting at the airstrip -->
     <div class="screen hidden" data-screen="airstrip">
@@ -214,6 +209,7 @@
 <script src="intro.js"></script>
 <script src="net.js"></script>
 <script src="game.js"></script>
+<script src="camp.js"></script>
 <script src="story.js"></script>
 <script src="ending.js"></script>
 </body>

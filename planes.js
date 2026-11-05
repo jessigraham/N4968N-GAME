@@ -238,9 +238,9 @@ function shadeHex(hex, k) {
 G.Planes = {
   K,
   // a plane's length in pixels, for parking and collisions
-  size(p) { const T = TYPES[p.kind]; return { len: (T.len[0] - T.len[1]) * K * (T.scale || 1), span: T.span * 2 * K * (T.scale || 1) }; },
+  size(p) { const T = TYPES[p.kind] || TYPES.c172; return { len: (T.len[0] - T.len[1]) * K * (T.scale || 1), span: T.span * 2 * K * (T.scale || 1) }; },
   draw(ctx, p, t) {
-    const T = TYPES[p.kind], sc = (T.scale || 1) * K;
+    const T = TYPES[p.kind] || TYPES.c172, sc = (T.scale || 1) * K;
     if (!p.grime) p.grime = Array.from({ length: 7 }, (_, i) => [((i * 37) % 13) / 13 * 1.6 - 0.9, ((i * 53) % 17) / 17 * T.span * 2 - T.span, 0.3 + (i % 3) * 0.2]);
     if (p.propAngle == null) p.propAngle = (p.x * 7.3) % TAU;
     // shadow on the ground (higher wings throw it farther)
@@ -258,14 +258,14 @@ G.Planes = {
   },
   // a flat dark silhouette of the plane (its shadow), drawn without canvas filters so it works in every browser
   silhouette(ctx, p, fill) {
-    const T = TYPES[p.kind], sc = (T.scale || 1) * K;
+    const T = TYPES[p.kind] || TYPES.c172, sc = (T.scale || 1) * K;
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.scale(sc, sc);
     silhouette(ctx, T, fill);
     ctx.restore();
   },
   // points along the fuselage you can't walk through (world coordinates)
   solid(p) {
-    const T = TYPES[p.kind], sc = (T.scale || 1) * K, c = Math.cos(p.rot), s = Math.sin(p.rot);
+    const T = TYPES[p.kind] || TYPES.c172, sc = (T.scale || 1) * K, c = Math.cos(p.rot), s = Math.sin(p.rot);
     const out = [];
     for (let x = T.len[0] - 0.6; x >= T.len[1] + 0.8; x -= 1.0) out.push({ x: p.x + c * x * sc, y: p.y + s * x * sc, r: 0.65 * sc });
     if (T.nacelles) for (const y of T.nacelles) out.push({ x: p.x - s * y * sc + c * 0.8 * sc, y: p.y + c * y * sc + s * 0.8 * sc, r: 0.45 * sc });

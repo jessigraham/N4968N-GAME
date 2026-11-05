@@ -1,4 +1,4 @@
-/* The beginning of the game: opening story → choose your researcher → backstory → path scene → run for the airstrip.
+/* The beginning of the game: opening story → choose your researcher → backstory → base camp (pack your bag) → run for the airstrip.
    Text comes from story.md. Each player goes through it on their own device. */
 (() => {
 'use strict';
@@ -24,7 +24,7 @@ const BIOS = {
     line: 'I have the only cure on this island in my pocket. I’m not leaving it here.',
     place: 'The lab tent', scene: 'lab', title: 'Get the sample. Get out.',
     text: 'The generator coughs. The lights flicker. Something is scratching at the tent flap.',
-    items: ['Moonflower sample', 'Flight bag'],
+    items: ['moonflower', 'headset'],
   },
   wren: {
     teaser: 'Knows every trail. Never lost a guest.',
@@ -32,7 +32,7 @@ const BIOS = {
     line: 'I know these trails better than anyone. Let’s go. Now!',
     place: 'The river camp', scene: 'river', title: 'Grab your gear.',
     text: 'The river is loud tonight. Not loud enough to cover the footsteps in the trees.',
-    items: ['Trail map', 'Your bandana'],
+    items: ['map', 'machete'],
   },
   elias: {
     teaser: 'Talks to his ferns. They talk back.',
@@ -40,19 +40,19 @@ const BIOS = {
     line: 'Okay, little guy. We’re getting on that plane.',
     place: 'The lab tent', scene: 'lab', title: 'Don’t forget the fern.',
     text: 'Glass rattles in the greenhouse. Every light in camp is out except yours, and they can see it.',
-    items: ['Your favorite fern', 'Flight bag'],
+    items: ['fern', 'journal'],
   },
   kip: {
     teaser: 'Lost in 14 jungles. Still has the frog.',
     story: 'They call him Compass because he has never once known which way north is. Kip has been lost in fourteen jungles and found his way out of every single one, usually with a new friend and a better story. He came to Kanoa to guide the scientists to a rare tree frog whose skin might hold part of the cure. He got the frog. He also got chased by zombies. He still has the frog.',
     line: 'Good news, I found the frog. Bad news, everyone else found us.',
-    place: 'The river camp', scene: 'river', title: 'Map. Hat. Frog. Go.',
-    text: 'The frog is in your pocket. It looks worried. Something big just stepped into the river behind you.',
-    items: ['Trail map', 'Your hat'],
+    place: 'The river camp', scene: 'river', title: 'Frog. Camera. Go.',
+    text: 'You left the frog in its jar somewhere in camp. It looks worried. Something big just stepped into the river behind you.',
+    items: ['frog', 'camera'],
   },
 };
 
-let onDone = null, onPick = null, step = 0, timer = 0, chosen = null;
+let onDone = null, onPick = null, onPacked = null, step = 0, timer = 0, chosen = null;
 
 function show(name) { G.showScreen(name); }
 
@@ -102,50 +102,42 @@ function toBackstory(id) {
 $('#bsBack').addEventListener('click', () => { G.Sfx.stopFile(); show('select'); });
 $('#bsGo').addEventListener('click', () => { G.Sfx.stopFile(); if (onPick) onPick(chosen); toPath(chosen); });
 
-// ---------- path scene: grab your things, then run ----------
+// ---------- base camp: find your two things and pack your bag, then run ----------
 function toPath(id) {
   const bio = BIOS[id];
-  G.Intro.setScene(bio.scene);
-  $('#pathPlace').textContent = bio.place;
-  $('#pathTitle').textContent = bio.title;
-  $('#pathText').textContent = bio.text;
-  const box = $('#pathItems'); box.innerHTML = '';
-  const run = $('#pathRun'); run.disabled = true; run.classList.remove('ready');
-  let left = bio.items.length;
-  bio.items.forEach(name => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'item'; b.textContent = 'Grab: ' + name;
-    b.addEventListener('click', () => {
-      if (b.classList.contains('got')) return;
-      b.classList.add('got'); b.textContent = '✓ ' + name;
-      G.Sfx.click();
-      if (--left === 0) { run.disabled = false; run.classList.add('ready'); }
-    });
-    box.appendChild(b);
+  G.Intro.stop();
+  G.Camp.start({
+    char: id, items: bio.items, title: bio.title, text: bio.text,
+    rival: G.campRival ? G.campRival() : null,
+    onPos: G.campSend || null,
+    onPacked: () => (onPacked ? onPacked(chosen) : false),
+    onRun: runOut,
   });
-  show('path');
+  $('#menu').classList.add('hidden');
 }
-$('#pathRun').addEventListener('click', () => {
+function runOut() {
   const fade = $('#runFade');
   fade.classList.remove('hidden'); void fade.offsetWidth; fade.classList.add('on');
   G.Sfx.run(2.4);
   setTimeout(() => {
+    G.Camp.stop();
     G.Intro.setScene('jungle');
     if (onDone) onDone(chosen);
     setTimeout(() => { fade.classList.remove('on'); setTimeout(() => fade.classList.add('hidden'), 600); }, 200);
   }, 2400);
-});
+}
 
 G.Story = {
   // Start the opening. pick(char) fires when a researcher is chosen; done(char) when they reach the airstrip.
-  begin(pick, done) {
-    onPick = pick; onDone = done; step = 0; chosen = null;
+  // packed(char) fires online when the bag is packed: return true to wait in camp for the rival.
+  begin(pick, done, packed) {
+    onPick = pick; onDone = done; onPacked = packed || null; step = 0; chosen = null;
     G.Intro.setScene('story');
     show('story');
     storyLine();
   },
   // straight to choosing a researcher (after a game, to switch characters)
-  chooseAgain(pick, done) { onPick = pick; onDone = done; chosen = null; toSelect(); },
-  stop() { clearTimeout(timer); G.Sfx.stopFile(); },
+  chooseAgain(pick, done, packed) { onPick = pick; onDone = done; onPacked = packed || null; chosen = null; toSelect(); },
+  stop() { clearTimeout(timer); G.Sfx.stopFile(); if (G.Camp) G.Camp.stop(); },
 };
 })();

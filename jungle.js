@@ -654,6 +654,40 @@ function drawCharacter(img, x, y, face, moving, step, alpha, hit) {
 
 const imgs = {};
 const charImg = c => imgs[c] || (imgs[c] = Object.assign(new Image(), { src: `assets/characters/${c}.png` }));
+// Photoreal ground and canopy art (assets/jungle). Ground textures tile seamlessly; scale = world units per texture pixel.
+const TEX = { floor: 0.7, trail: 0.42, water: 0.8, clear: 0.95, strip: 0.55, bridge: 0.22 };
+const tex = n => imgs['t' + n] || (imgs['t' + n] = Object.assign(new Image(), { src: `assets/jungle/${n}.jpg` }));
+const sprite = n => imgs['s' + n] || (imgs['s' + n] = Object.assign(new Image(), { src: `assets/jungle/${n}.png` }));
+const ready = im => im.complete && im.naturalWidth > 0;
+const patterns = {};
+function pattern(n) {
+  if (patterns[n]) return patterns[n];
+  const im = tex(n);
+  if (!ready(im)) return null;
+  const p = ctx.createPattern(im, 'repeat');
+  if (p.setTransform) p.setTransform(new DOMMatrix().scale(TEX[n]));
+  return (patterns[n] = p);
+}
+Object.keys(TEX).forEach(tex); ['tree1', 'tree2', 'tree3', 'palm1', 'palm2', 'bush'].forEach(sprite);
+// circles on each cell plus between touching cells, which smooths the edge into a flowing shape
+function blobs(cells, rad) {
+  const has = new Set(cells.map(([x, y]) => x + ',' + y));
+  const dot = (x, y, r) => { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); };
+  for (const [cx, cy] of cells) {
+    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
+    dot(x, y, rad);
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) if (has.has((cx + dx) + ',' + (cy + dy))) dot(x + dx * CELL / 2, y + dy * CELL / 2, rad * 0.92);
+  }
+}
+// paint every cell of one ground type as overlapping soft blobs, so edges look organic instead of square
+function paintCells(type, name, cells, rad) {
+  const p = pattern(name);
+  if (!p || !cells.length) return false;
+  ctx.fillStyle = p; ctx.beginPath();
+  blobs(cells, rad);
+  ctx.fill();
+  return true;
+}
 
 function draw() {
   const r = canvas.getBoundingClientRect();
@@ -667,15 +701,30 @@ function draw() {
   const x0 = Math.max(0, Math.floor(camX / CELL) - 1), y0 = Math.max(0, Math.floor(camY / CELL) - 1);
   const x1 = Math.min(GW - 1, Math.ceil((camX + W / zoom) / CELL) + 1), y1 = Math.min(GH - 1, Math.ceil((camY + H / zoom) / CELL) + 1);
 
-  // ground
-  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
-    const tile = world.grid[cy * GW + cx], v = shadeCell(cx, cy);
-    ctx.fillStyle = GROUND[tile];
-    ctx.fillRect(cx * CELL, cy * CELL, CELL + 1, CELL + 1);
-    if (tile === T.BRUSH) { ctx.fillStyle = `rgba(0,0,0,${v * 0.18})`; ctx.fillRect(cx * CELL, cy * CELL, CELL, CELL); }
-    else if (tile === T.TRAIL || tile === T.STRIP) { ctx.fillStyle = `rgba(255,230,190,${v * 0.06})`; ctx.fillRect(cx * CELL + 6, cy * CELL + 8, 10, 4); }
-    else if (tile === T.WATER) { ctx.fillStyle = `rgba(190,230,255,${0.08 + 0.06 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
-    else if (tile === T.BRIDGE) { ctx.fillStyle = '#4e3620'; for (let k = 0; k < 4; k++) ctx.fillRect(cx * CELL, cy * CELL + k * 10, CELL, 2); }
+  // ground: photoreal textures when they've loaded, flat colours until then
+  const floorP = pattern('floor');
+  if (floorP) {
+    ctx.fillStyle = floorP; ctx.fillRect(x0 * CELL, y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL);
+    const cells = { [T.CLEAR]: [], [T.STRIP]: [], [T.TRAIL]: [], [T.WATER]: [], [T.BRIDGE]: [] };
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) { const tile = world.grid[cy * GW + cx]; if (cells[tile]) cells[tile].push([cx, cy]); }
+    paintCells(T.CLEAR, 'clear', cells[T.CLEAR].concat(cells[T.STRIP]), CELL * 0.8);
+    // a darker damp edge under the trail, then the mud itself
+    ctx.fillStyle = 'rgba(20,12,6,0.35)'; ctx.beginPath();
+    blobs(cells[T.TRAIL], CELL * 0.86);
+    ctx.fill();
+    paintCells(T.TRAIL, 'trail', cells[T.TRAIL], CELL * 0.74);
+    paintCells(T.WATER, 'water', cells[T.WATER].concat(cells[T.BRIDGE]), CELL * 0.78);
+    for (const [cx, cy] of cells[T.WATER]) { ctx.fillStyle = `rgba(200,170,230,${0.05 + 0.05 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
+    if (cells[T.BRIDGE].length && pattern('bridge')) { ctx.fillStyle = pattern('bridge'); for (const [cx, cy] of cells[T.BRIDGE]) ctx.fillRect(cx * CELL - 2, cy * CELL, CELL + 4, CELL); }
+    // the runway itself: a straight band of packed red dirt
+    const sp = pattern('strip'), st = world.strip;
+    if (sp) { ctx.save(); ctx.translate(st.cx, st.cy); ctx.rotate(st.ang); ctx.fillStyle = sp; ctx.fillRect(-st.w / 2, -st.h / 2 + 20, st.w, st.h - 40); ctx.restore(); }
+  } else {
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+      const tile = world.grid[cy * GW + cx];
+      ctx.fillStyle = GROUND[tile];
+      ctx.fillRect(cx * CELL, cy * CELL, CELL + 1, CELL + 1);
+    }
   }
   // the airstrip: dirt runway with a centre line of stones
   const s = world.strip;
@@ -690,7 +739,9 @@ function draw() {
   // bushes, items, signs
   for (const b of world.bushes) {
     if (b.x < camX - 40 || b.x > camX + W / zoom + 40 || b.y < camY - 40 || b.y > camY + H / zoom + 40) continue;
-    ctx.fillStyle = b.hue < 0.5 ? '#264a2a' : '#2d5530'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+    const bi = sprite('bush');
+    if (ready(bi)) { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.hue * 6.28); ctx.drawImage(bi, -b.r * 1.25, -b.r * 1.25, b.r * 2.5, b.r * 2.5); ctx.restore(); }
+    else { ctx.fillStyle = b.hue < 0.5 ? '#264a2a' : '#2d5530'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill(); }
   }
   for (const it of world.items) {
     if (it.got) continue;
@@ -786,6 +837,8 @@ function draw() {
 
   // dusk light, fever blur and edge clues (screen space)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#c4aec8'; ctx.fillRect(0, 0, W, H);   // the same purple dusk as base camp
+  ctx.globalCompositeOperation = 'source-over';
   const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
   v.addColorStop(0, 'rgba(40,10,40,0.05)'); v.addColorStop(1, 'rgba(10,0,15,0.7)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
@@ -847,6 +900,13 @@ function drawAttack() {
 
 function drawTree(tr) {
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(tr.x + 10, tr.y + 8, tr.crown, tr.crown * 0.55, 0, 0, TAU); ctx.fill();
+  const im = sprite(tr.palm ? (tr.hue < 0.5 ? 'palm1' : 'palm2') : tr.hue < 0.33 ? 'tree1' : tr.hue < 0.66 ? 'tree2' : 'tree3');
+  if (ready(im)) {
+    const c = tr.crown * (tr.palm ? 2.5 : 2.3), sway = Math.sin(t * 0.8 + tr.x * 0.01) * 0.03;
+    ctx.save(); ctx.translate(tr.x, tr.y - tr.crown * 0.5); ctx.rotate(((tr.x * 0.37 + tr.y * 0.11) % 6.28) + sway);
+    ctx.drawImage(im, -c / 2, -c / 2, c, c); ctx.restore();
+    return;
+  }
   if (tr.palm) {
     ctx.strokeStyle = '#2f5a2c'; ctx.lineWidth = 7; ctx.lineCap = 'round';
     for (let k = 0; k < 7; k++) {
@@ -988,6 +1048,28 @@ sb.addEventListener('pointerdown', e => { e.preventDefault(); sprintBtn = true; 
 document.getElementById('jAct').addEventListener('click', board);
 document.getElementById('jAttack').addEventListener('pointerdown', e => { e.preventDefault(); attack(); });
 
+// A short field briefing when the run starts: how to move, fight and survive. It fades on its own.
+let briefTimer = 0;
+function briefing(show) {
+  let el = document.getElementById('jBrief');
+  if (!show) { if (el) el.classList.add('hidden'); clearTimeout(briefTimer); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'jBrief';
+    document.getElementById('jungle').appendChild(el);
+    el.addEventListener('click', () => briefing(false));
+  }
+  const c = G.CHARS[opts.char] || {}, touch = matchMedia('(pointer: coarse)').matches;
+  el.innerHTML = `<p class="role">Field briefing</p><h3>Get to the airstrip alive</h3><ul>
+    <li><b>Move</b> ${touch ? 'with the thumb stick' : 'with the arrow keys or WASD'}. <b>Sprint</b> with ${touch ? 'the Sprint button' : 'Shift'} while your stamina lasts.</li>
+    <li><b>${c.icon || ''} ${c.weapon || 'Attack'}:</b> ${touch ? 'tap the round button' : 'press Space'}. ${c.weaponLine || ''} Zombies take a few hits.</li>
+    <li>When a zombie flashes a red <b>!</b> it's about to bite. Strike right then for a <b>perfect counter</b>.</li>
+    <li>Grab <b>bug spray</b> and <b>med kits</b> on the trail. Mosquito swarms raise your fever.</li>
+    <li>Follow the trails and signs, watch for <b>smoke</b>, and ${touch ? 'tap Climb in' : 'press Space'} at a plane.</li>
+  </ul><button type="button" class="hero-btn">Got it</button>`;
+  el.classList.remove('hidden');
+  clearTimeout(briefTimer); briefTimer = setTimeout(() => briefing(false), 12000);
+}
+
 function showUI(on) {
   document.getElementById('jungle').classList.toggle('hidden', !on);
   canvas.style.filter = '';
@@ -1006,10 +1088,11 @@ G.Jungle = {
     showUI(true);
     ensureSounds();
     say('Find the hidden airstrip. Follow the trails, watch for signs.', '#ffd970', 4);
+    briefing(true);
     running = true; last = performance.now();
     if (!looping) { looping = true; requestAnimationFrame(frame); }
   },
-  stop() { running = false; stopSounds(); showUI(false); },
+  stop() { running = false; stopSounds(); showUI(false); briefing(false); },
   setGhost(g) { ghost = g; },
   markTaken(id) { taken[id] = true; },
   rivalArrived(secondsLeft) { deadline = t + secondsLeft; },

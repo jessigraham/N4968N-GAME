@@ -458,4 +458,57 @@ body.shake { animation: shake .45s; }
 }
 
 .fchip.frival { color: #5ec8e5; border-color: rgba(94,200,229,.5); }
-@media (max-width: 700px) { .fchip.frival { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); } }
+@media (max-width: 960px) { .fchip.frival { position: absolute; top: 40px; left: 50%; transform: translateX(-50%); white-space: nowrap; } }
+
+/* ---------- base camp: first-person "pack your bag" ---------- */
+#camp { position: fixed; inset: 0; z-index: 12; background: #120c18; touch-action: none; color: #f3eee6; font-family: system-ui, sans-serif; }
+#campCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+#camp .campTop { position: absolute; top: max(14px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left)); max-width: min(440px, 70vw); pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,.8); }
+#camp .campTop .role { margin: 0; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; color: #f4b860; }
+#camp .campTop h2 { margin: 2px 0 4px; font: 400 clamp(26px, 4vw, 40px)/1 "Bebas Neue", sans-serif; letter-spacing: .04em; }
+#camp .campTop p { margin: 0; font-size: 14px; line-height: 1.4; color: #e2d8cc; }
+#camp .campRival { position: absolute; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); background: rgba(12,8,18,.7); border: 1px solid rgba(255,255,255,.14); border-radius: 999px; padding: 4px 12px 4px 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; pointer-events: none; }
+#camp .campRival img { height: 30px; width: 30px; object-fit: cover; object-position: top; border-radius: 50%; background: rgba(255,255,255,.08); }
+#camp .campRival b { color: #ffd970; }
+#camp .campMsg { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font: 400 clamp(22px, 3vw, 30px) "Bebas Neue", sans-serif; letter-spacing: .05em; text-align: center; text-shadow: 0 2px 12px #000; opacity: 0; transition: opacity .3s; pointer-events: none; max-width: 90vw; }
+#camp .campMsg.on { opacity: 1; }
+#camp .campPrompt { position: absolute; left: 50%; bottom: 128px; transform: translateX(-50%); background: rgba(12,8,18,.78); border: 1px solid rgba(255,255,255,.18); border-radius: 10px; padding: 8px 14px; font-size: 15px; pointer-events: none; white-space: nowrap; }
+#camp .campPrompt.mine { border-color: #ffd970; color: #ffd970; font-weight: 600; }
+#camp .campBag { position: absolute; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(12,8,18,.72); border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 6px 14px 6px 6px; pointer-events: none; }
+#camp .campBag > img { height: 58px; }
+#camp .campBag b { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #f4b860; }
+#camp .campSlots { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+#camp .campSlots span { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 3px 8px 3px 3px; border-radius: 8px; border: 1px dashed rgba(255,255,255,.25); color: #b9b0a6; }
+#camp .campSlots img { height: 30px; width: 30px; object-fit: contain; filter: brightness(0) opacity(.45); }
+#camp .campSlots span.got { border-style: solid; border-color: #7bed9f; color: #7bed9f; }
+#camp .campSlots span.got img { filter: none; }
+#camp .campHelp { position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: 92px; margin: 0; font-size: 13px; color: #d9cfc3; text-shadow: 0 1px 6px #000; pointer-events: none; }
+#camp .campHelp .k { display: inline-block; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); border-radius: 5px; padding: 0 6px; margin: 0 2px 0 8px; font-weight: 600; color: #fff; }
+#camp .campHelp .k:first-child { margin-left: 0; }
+#camp .tapOnly { display: none; }
+@media (pointer: coarse) { #camp .campHelp .k, #camp .campHelp { font-size: 0; } #camp .campHelp .tapOnly { display: inline; font-size: 13px; } }
+#camp .campDone { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; background: rgba(12,8,18,.78); border: 1px solid rgba(255,217,112,.4); border-radius: 16px; padding: 18px 24px; max-width: min(420px, 88vw); }
+#camp .campDone p { margin: 0 0 10px; font: 400 26px "Bebas Neue", sans-serif; letter-spacing: .05em; }
+#camp .hidden, #camp.hidden { display: none; }
+
+/* jungle: field briefing at the start of the run */
+#jBrief { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 74px; z-index: 3; width: min(380px, 60vw); background: rgba(10, 12, 10, .86); border: 1px solid rgba(255, 217, 112, .35); border-radius: 14px; padding: 16px 20px; color: #eef0e6; font: 13px/1.4 system-ui, sans-serif; animation: briefIn .35s ease-out; }
+#jBrief.hidden { display: none; }
+#jBrief .role { margin: 0; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #f4b860; }
+#jBrief h3 { margin: 2px 0 8px; font: 400 24px/1 "Bebas Neue", sans-serif; letter-spacing: .04em; }
+#jBrief ul { margin: 0 0 12px; padding-left: 18px; }
+#jBrief li { margin: 4px 0; }
+#jBrief b { color: #ffd970; }
+#jBrief .hero-btn { padding: 8px 22px; font-size: 20px; }
+@keyframes briefIn { from { opacity: 0; transform: translateX(-12px); } }
+@media (max-height: 460px) {
+  #camp .campBag { padding: 3px 10px 3px 3px; gap: 6px; }
+  #camp .campBag > img { height: 38px; }
+  #camp .campBag b { font-size: 10px; }
+  #camp .campSlots span { font-size: 11px; }
+  #camp .campSlots img { height: 20px; width: 20px; }
+  #camp .campHelp { bottom: 62px; font-size: 11px; }
+  #camp .campPrompt { bottom: 96px; font-size: 13px; }
+  #camp .campTop p { display: none; }
+  #camp .campTop h2 { font-size: 24px; }
+}

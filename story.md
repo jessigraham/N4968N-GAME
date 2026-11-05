@@ -54,12 +54,18 @@ Dr. Elias Fernsby talks to his ferns, and he swears they talk back. He came to K
 
 Spoken line (male voice): "Okay, little guy. We're getting on that plane."
 
-## 4. Path scene, then the race
+## 4. Base camp: pack your bag
 
-Botanist path: starts in the lab tent. Grab the orchid sample (Dr. Thorne) or the fern (Dr. Fernsby), then run for the strip.
-Jungle path: starts at the river camp. Grab the map and the hat, then run for the strip.
+Everyone starts in the same base camp at dusk (a first-person view of a photoreal camp: lab tent, greenhouse, campfire, supply crates, river dock). Walk around and find your two items, then pack them in your flight bag:
 
-Both paths end at the airstrip: the cockpit race begins.
+- Dr. Ivy Thorne: the moonflower sample and her aviation headset
+- Wren "Riptide" Calloway: the trail map and her machete, Mildred
+- Dr. Elias Fernsby: his favorite fern and his seed journal
+- Kip "Compass" Monroe: the frog (in its jar) and his camera
+
+Other people's things are in camp too; you can only pack your own. Your rival packs in the same camp, so it doubles as the waiting room before the run. Your heart pounds while you search.
+
+After packing, run for the airstrip through the jungle. Both paths end at the airstrip: the cockpit race begins.
 
 ## 5. Effort lines during the race (same voice as the chosen character)
 
