@@ -448,6 +448,9 @@ function frame(now) {
   draw();
 }
 
+// the walk art is shared with the jungle run
+G.Walk = { WALK, FIG, CYCLE, lit };
+
 G.Camp = {
   // o: { char, items: [id, id], title, text, rival: { char, bot }?, onPos(pos)?, onPacked()? -> true to wait here, onRun() }
   start(opts) {

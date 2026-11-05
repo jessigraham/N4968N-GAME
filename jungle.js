@@ -271,7 +271,11 @@ function update(dt) {
 
   const tile = world.at(Math.floor(me.x / CELL), Math.floor(me.y / CELL));
   let sp = SPEED * (sprinting ? SPRINT : 1) * (tile === T.BRUSH ? BRUSH_SLOW : 1) * (me.infection >= 60 ? 0.7 : 1);
-  let vx = moving ? ix * sp : 0, vy = moving ? iy * sp : 0;
+  // ease toward the wanted speed (about a tenth of a second), so starts and stops have weight but stay responsive
+  const ease = 1 - Math.exp(-dt * 14);
+  me.svx = (me.svx || 0) + ((moving ? ix * sp : 0) - (me.svx || 0)) * ease;
+  me.svy = (me.svy || 0) + ((moving ? iy * sp : 0) - (me.svy || 0)) * ease;
+  let vx = me.svx, vy = me.svy;
   // knocked back by a zombie
   vx += me.kx; vy += me.ky; me.kx *= Math.pow(0.02, dt); me.ky *= Math.pow(0.02, dt);
   if (!blocked(me.x + vx * dt, me.y, 14)) me.x += vx * dt;
@@ -279,15 +283,10 @@ function update(dt) {
   if (Math.abs(ix) > 0.1 && moving) me.face = ix < 0 ? -1 : 1;
   if (moving) { me.dirx = ix; me.diry = iy; const m2 = Math.hypot(ix, iy) || 1; me.dirx /= m2; me.diry /= m2; }
   me.moving = moving; me.sprinting = sprinting;
-  if (moving) {
-    const before = Math.floor(me.step);
-    me.step += dt * (sprinting ? 3.4 : 2.4);
-    if (Math.floor(me.step * 2) !== Math.floor((me.step - dt * (sprinting ? 3.4 : 2.4)) * 2)) {
-      dust.push({ x: me.x + (Math.random() - 0.5) * 10, y: me.y + 4, life: 0.6 });
-      if (G.Sfx.ctx) G.Sfx.burst(0, G.Sfx.t, 0.05, tile === T.BRUSH ? 1200 : 420, 'lowpass', tile === T.BRUSH ? 0.12 : 0.18);
-    }
-    void before;
-  }
+  stride(meAnim, me.x, me.y, dt, (side, run) => {   // a foot lands: dust and a step you can hear
+    dust.push({ x: me.x + side * 6 + (Math.random() - 0.5) * 6, y: me.y + 3, life: 0.6 + run * 0.2 });
+    if (G.Sfx.ctx) G.Sfx.burst(side * 0.2, G.Sfx.t, 0.05 + run * 0.02, (tile === T.BRUSH ? 1200 : 420) * (0.9 + Math.random() * 0.2), 'lowpass', (tile === T.BRUSH ? 0.12 : 0.18) * (1 + run * 0.4));
+  });
   dust = dust.filter(d => (d.life -= dt) > 0);
 
   // mosquitoes and the infection meter
@@ -637,18 +636,59 @@ function shadeCell(cx, cy) { return ((cx * 73856093) ^ (cy * 19349663)) % 7 / 7;
 
 function drawPlane(p) { G.Planes.draw(ctx, p, t); }
 
-function drawCharacter(img, x, y, face, moving, step, alpha, hit) {
-  const h = 76, bob = moving ? Math.abs(Math.sin(step * Math.PI)) * 6 : 0;
-  const sq = moving ? 1 - 0.06 * Math.abs(Math.sin(step * Math.PI)) : 1;
+// ---------- walking and running, shared with base camp ----------
+// Each person has an animation state driven by how they actually move: gait (0 standing, 1 walking, more when
+// sprinting), a stride that advances with distance (no sliding feet), and a facing that swings round in a turn.
+// Sideways movement shows the side-view walk cycle; standing, or heading up or down the screen, shows the front view.
+const STRIDE_W = 30;   // world units per step at a walk
+const meAnim = {}, ghostAnim = {};
+function stride(a, x, y, dt, onStep) {
+  if (a.x === undefined || Math.hypot(x - a.x, y - a.y) > 200) { a.x = x; a.y = y; a.vx = a.vy = 0; a.step = 0; a.gait = 0; }
+  if (!dt) return;
+  const k = 1 - Math.exp(-dt * 12);
+  a.vx += ((x - a.x) / dt - a.vx) * k; a.vy += ((y - a.y) / dt - a.vy) * k;
+  const dist = Math.hypot(x - a.x, y - a.y); a.x = x; a.y = y;
+  const speed = Math.hypot(a.vx, a.vy);
+  a.run = clamp((speed / SPEED - 1.05) / 0.5, 0, 1);   // 0 walking, 1 flat-out sprint
+  a.gait += (Math.min(1, speed / (SPEED * 0.6)) - a.gait) * (1 - Math.exp(-dt * 8));
+  if (Math.abs(a.vx) > 25) a.face = a.vx > 0 ? 1 : -1;
+  a.faceS = a.faceS === undefined ? (a.face || 1) : a.faceS + ((a.face || 1) - a.faceS) * (1 - Math.exp(-dt * 12));
+  // how much side-view walk to show: walking sideways is all walk, standing or heading up or down is the front view
+  const sm = v => v * v * (3 - 2 * v), vx = Math.abs(a.vx), vy = Math.abs(a.vy);
+  const side = vx + vy > 5 ? vx / (vx + vy * 0.8) : 0;
+  const want = sm(clamp((a.gait - 0.15) / 0.35, 0, 1)) * sm(clamp((side - 0.3) / 0.4, 0, 1));
+  a.walkW = (a.walkW || 0) + (want - (a.walkW || 0)) * (1 - Math.exp(-dt * 10));
+  const before = Math.floor(a.step);
+  a.step += dist / (STRIDE_W * (1 + a.run * 0.4));   // longer strides when sprinting
+  if (onStep && Math.floor(a.step) !== before && a.gait > 0.3) onStep(Math.floor(a.step) % 2 ? 1 : -1, a.run);
+}
+function drawWalker(a, char, x, y, alpha, hit) {
+  const W8 = G.Walk, im = charImg(char);
+  const h = 84, w = h * 512 / 576, g = a.gait || 0, run = a.run || 0;
+  const ph = (a.step || 0) * Math.PI, contact = Math.abs(Math.cos(ph));
+  const bob = g * (1 - contact) * (5 + run * 4), squash = 1 - g * contact * (0.03 + run * 0.03);
+  const breathe = (1 - g) * Math.sin(t * 2.1 + x * 0.01) * 0.008;
+  const fs = a.faceS === undefined ? 1 : a.faceS, turn = Math.sign(fs || 1) * Math.max(0.18, Math.abs(fs));
+  const lean = Math.sign(fs || 1) * g * (0.05 + run * 0.09) + g * Math.sin(ph) * 0.02;
+  const smooth = v => v * v * (3 - 2 * v);
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 16 - bob, 6, 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.38)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 16 + g * 3 - bob * 0.6, 6, 0, 0, TAU); ctx.fill();
   ctx.translate(x, y - bob);
-  ctx.rotate(moving ? face * 0.08 : 0);
-  ctx.scale(face * (2 - sq), sq);
-  if (img && img.complete && img.naturalWidth) ctx.drawImage(img, -h / 2, -h, h, h);
-  else { ctx.fillStyle = '#ddd'; ctx.fillRect(-10, -50, 20, 50); }
-  if (hit) { ctx.globalCompositeOperation = 'source-atop'; ctx.fillStyle = 'rgba(255,0,0,0.4)'; ctx.fillRect(-h / 2, -h, h, h); }
+  ctx.rotate(lean);
+  ctx.scale(turn * (1 + (1 - squash) * 0.6), squash + breathe);
+  const tint = c => (hit && W8 ? W8.lit(c, '#ff2a2a', 0.45) : null) || c;
+  const ww = W8 && W8.WALK[char] ? (a.walkW || 0) : 0;
+  if (ww < 0.999 && im.complete && im.naturalWidth) { ctx.globalAlpha = alpha * Math.min(1, (1 - ww) * 2); ctx.drawImage(tint(im), -w / 2, -h * (561 / 576), w, h); }
+  if (ww > 0.001) {
+    // four beats per stride (right foot, passing, left foot, passing), each dissolving into the next
+    const beat = (a.step || 0) * 2, i = Math.floor(beat), f = beat - i, fh = h * W8.FIG[char];
+    const frame = k => { const n = W8.CYCLE[((k % 4) + 4) % 4]; return { im: imgs['w' + char + n] || (imgs['w' + char + n] = Object.assign(new Image(), { src: `assets/characters/walk/${char}-${n}.png` })), ax: W8.WALK[char][n] }; };
+    const put = (fr, al) => { if (!fr.im.complete || !fr.im.naturalWidth || al <= 0) return; const fw = fh * fr.im.naturalWidth / fr.im.naturalHeight; ctx.globalAlpha = al; ctx.drawImage(tint(fr.im), -fw * fr.ax, -fh, fw, fh); };
+    const solid = alpha * Math.min(1, ww * 2), mix = smooth(clamp((f - 0.6) / 0.4, 0, 1));
+    put(frame(i), solid); put(frame(i + 1), solid * mix);
+  }
+  if (!im.complete || !im.naturalWidth) { ctx.fillStyle = '#ddd'; ctx.fillRect(-10, -50, 20, 50); }
   ctx.restore();
 }
 
@@ -659,36 +699,59 @@ const TEX = { floor: 0.7, trail: 0.42, water: 0.8, clear: 0.95, strip: 0.55, bri
 const tex = n => imgs['t' + n] || (imgs['t' + n] = Object.assign(new Image(), { src: `assets/jungle/${n}.jpg` }));
 const sprite = n => imgs['s' + n] || (imgs['s' + n] = Object.assign(new Image(), { src: `assets/jungle/${n}.png` }));
 const ready = im => im.complete && im.naturalWidth > 0;
-const patterns = {};
-function pattern(n) {
-  if (patterns[n]) return patterns[n];
+const patterns = new Map();
+function pattern(n, c = ctx) {
+  const key = n + (c === ctx ? '' : '*');
+  if (patterns.has(key)) return patterns.get(key);
   const im = tex(n);
   if (!ready(im)) return null;
-  const p = ctx.createPattern(im, 'repeat');
+  const p = c.createPattern(im, 'repeat');
   if (p.setTransform) p.setTransform(new DOMMatrix().scale(TEX[n]));
-  return (patterns[n] = p);
+  patterns.set(key, p);
+  return p;
+}
+// Feathered ground: for each island, a soft-edged mask of where each surface is (built once, at 1/5 scale).
+// Each frame the texture is filled on a scratch canvas, cut to the mask, and laid on the jungle floor,
+// so trails, clearings and the river fade into the undergrowth instead of ending in hard, lumpy edges.
+const MS = 0.2;
+let masks = null, maskWorld = null;
+const buf = document.createElement('canvas'), bctx = buf.getContext('2d');
+function softMask(cells, rad, inner) {
+  const m = document.createElement('canvas'); m.width = Math.ceil(MW * MS); m.height = Math.ceil(MH * MS);
+  const c = m.getContext('2d'), r = rad * MS;
+  for (const [cx, cy] of cells) {
+    const x = (cx + 0.5) * CELL * MS, y = (cy + 0.5) * CELL * MS;
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(inner, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  return m;
+}
+function buildMasks() {
+  const of = (...types) => { const out = []; for (let i = 0; i < world.grid.length; i++) if (types.includes(world.grid[i])) out.push([i % GW, Math.floor(i / GW)]); return out; };
+  const trail = of(T.TRAIL);
+  masks = {
+    clear: softMask(of(T.CLEAR, T.STRIP), CELL * 1.05, 0.45),
+    rim: softMask(trail, CELL * 1.25, 0.3),     // the damp, darker earth along the trail's edge
+    trail: softMask(trail, CELL * 0.95, 0.5),
+    water: softMask(of(T.WATER, T.BRIDGE), CELL * 0.9, 0.6),
+  };
+  maskWorld = world;
+}
+// lay one textured surface through its mask (the main canvas is in world space when this is called)
+function surface(name, mask, zoom, camX, camY) {
+  const c = bctx;
+  if (buf.width !== W || buf.height !== H) { buf.width = W; buf.height = H; }
+  const p = pattern(name, c);
+  if (!p) return;
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, W, H);
+  c.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
+  c.fillStyle = p; c.fillRect(camX, camY, W / zoom, H / zoom);
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(mask, 0, 0, MW, MH);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(buf, 0, 0); ctx.restore();
 }
 Object.keys(TEX).forEach(tex); ['tree1', 'tree2', 'tree3', 'palm1', 'palm2', 'bush'].forEach(sprite);
-// circles on each cell plus between touching cells, which smooths the edge into a flowing shape
-function blobs(cells, rad) {
-  const has = new Set(cells.map(([x, y]) => x + ',' + y));
-  const dot = (x, y, r) => { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); };
-  for (const [cx, cy] of cells) {
-    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
-    dot(x, y, rad);
-    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) if (has.has((cx + dx) + ',' + (cy + dy))) dot(x + dx * CELL / 2, y + dy * CELL / 2, rad * 0.92);
-  }
-}
-// paint every cell of one ground type as overlapping soft blobs, so edges look organic instead of square
-function paintCells(type, name, cells, rad) {
-  const p = pattern(name);
-  if (!p || !cells.length) return false;
-  ctx.fillStyle = p; ctx.beginPath();
-  blobs(cells, rad);
-  ctx.fill();
-  return true;
-}
-
 function draw() {
   const r = canvas.getBoundingClientRect();
   W = Math.max(1, Math.round(r.width * dpr)); H = Math.max(1, Math.round(r.height * dpr));
@@ -705,17 +768,16 @@ function draw() {
   const floorP = pattern('floor');
   if (floorP) {
     ctx.fillStyle = floorP; ctx.fillRect(x0 * CELL, y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL);
-    const cells = { [T.CLEAR]: [], [T.STRIP]: [], [T.TRAIL]: [], [T.WATER]: [], [T.BRIDGE]: [] };
-    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) { const tile = world.grid[cy * GW + cx]; if (cells[tile]) cells[tile].push([cx, cy]); }
-    paintCells(T.CLEAR, 'clear', cells[T.CLEAR].concat(cells[T.STRIP]), CELL * 0.8);
-    // a darker damp edge under the trail, then the mud itself
-    ctx.fillStyle = 'rgba(20,12,6,0.35)'; ctx.beginPath();
-    blobs(cells[T.TRAIL], CELL * 0.86);
-    ctx.fill();
-    paintCells(T.TRAIL, 'trail', cells[T.TRAIL], CELL * 0.74);
-    paintCells(T.WATER, 'water', cells[T.WATER].concat(cells[T.BRIDGE]), CELL * 0.78);
-    for (const [cx, cy] of cells[T.WATER]) { ctx.fillStyle = `rgba(200,170,230,${0.05 + 0.05 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
-    if (cells[T.BRIDGE].length && pattern('bridge')) { ctx.fillStyle = pattern('bridge'); for (const [cx, cy] of cells[T.BRIDGE]) ctx.fillRect(cx * CELL - 2, cy * CELL, CELL + 4, CELL); }
+    if (maskWorld !== world) buildMasks();
+    surface('clear', masks.clear, zoom, camX, camY);
+    ctx.globalAlpha = 0.45; ctx.drawImage(masks.rim, 0, 0, MW, MH); ctx.globalAlpha = 1;
+    surface('trail', masks.trail, zoom, camX, camY);
+    surface('water', masks.water, zoom, camX, camY);
+    for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
+      const tile = world.grid[cy * GW + cx];
+      if (tile === T.WATER) { ctx.fillStyle = `rgba(200,170,230,${0.05 + 0.05 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
+      else if (tile === T.BRIDGE && pattern('bridge')) { ctx.fillStyle = pattern('bridge'); ctx.fillRect(cx * CELL - 2, cy * CELL, CELL + 4, CELL); }
+    }
     // the runway itself: a straight band of packed red dirt
     const sp = pattern('strip'), st = world.strip;
     if (sp) { ctx.save(); ctx.translate(st.cx, st.cy); ctx.rotate(st.ang); ctx.fillStyle = sp; ctx.fillRect(-st.w / 2, -st.h / 2 + 20, st.w, st.h - 40); ctx.restore(); }
@@ -794,8 +856,8 @@ function draw() {
     }
   } });
   for (const c of world.checkpoints) if (inView(c.x, c.y, 80)) stand.push({ y: c.y, f: () => drawLantern(c) });
-  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawCharacter(charImg(ghost.char), ghost.x, ghost.y, ghost.face || 1, ghost.moving, t * 2.4, 0.55, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(bot ? G.CHARS[ghost.char].short.toUpperCase() : 'RIVAL', ghost.x, ghost.y - 86); } });
-  stand.push({ y: me.y, f: () => drawCharacter(charImg(opts.char), me.x, me.y, me.face, me.moving, me.step, 1, t - me.hit < 0.3) });
+  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawWalker(ghostAnim, ghost.char, ghostAnim.x, ghostAnim.y, 0.8, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(bot ? G.CHARS[ghost.char].short.toUpperCase() : 'RIVAL', ghost.x, ghost.y - 86); } });
+  stand.push({ y: me.y, f: () => drawWalker(meAnim, opts.char, me.x, me.y, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
   // Clear Skies only: a soft arrow over the planes that can still fly
   if (opts.mode.planeHint && me.foundStrip) {
@@ -1002,10 +1064,19 @@ function banner(text, y, color) {
 
 // ---------- Loop and input ----------
 let looping = false;
+// the rival glides between position updates (online ones arrive about 10 times a second), then walks like you do
+let ghostShow = null;
+function animateGhost(dt) {
+  if (!ghost) { ghostShow = null; return; }
+  if (!ghostShow || ghostShow.char !== ghost.char || Math.hypot(ghost.x - ghostShow.x, ghost.y - ghostShow.y) > 300) ghostShow = { x: ghost.x, y: ghost.y, char: ghost.char };
+  const k = 1 - Math.exp(-dt * (bot ? 30 : 9));
+  ghostShow.x += (ghost.x - ghostShow.x) * k; ghostShow.y += (ghost.y - ghostShow.y) * k;
+  stride(ghostAnim, ghostShow.x, ghostShow.y, dt);
+}
 function frame(now) {
   if (!running) { looping = false; return; }
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-  update(dt); draw();
+  update(dt); animateGhost(dt); draw();
   requestAnimationFrame(frame);
 }
 setInterval(() => {   // keep going if animation frames are paused (background tab)
@@ -1083,7 +1154,8 @@ G.Jungle = {
     me = { x: world.start.x, y: world.start.y, face: 1, dirx: 1, diry: 0, health: 100, attackReady: 0, attackAt: -9, flashAt: -9, deadUntil: 0, respawnAt: 0, checkpoint: null,
       step: 0, moving: false, stamina: 100, infection: 0, kx: 0, ky: 0,
       stunUntil: 0, outUntil: 0, sprayUntil: 0, hit: -9, hasMap: false, foundStrip: false };
-    ghost = null; taken = {}; floats = [];
+    ghost = null; ghostShow = null; taken = {}; floats = [];
+    [meAnim, ghostAnim].forEach(a => Object.keys(a).forEach(k => delete a[k]));
     bot = o.bot ? { char: o.bot, x: world.start.x + 30, y: world.start.y + 10, i: 0, health: 100, deaths: 0, deadUntil: 0, face: 1, cp: null, boarded: false } : null; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
     showUI(true);
     ensureSounds();
@@ -1103,7 +1175,7 @@ G.Jungle = {
   stats() { return { time: t, deaths: (me && me.deaths) || 0, kills: (me && me.kills) || 0 }; },
   get running() { return running; },
   // for testing: where things are
-  debug() { return { world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
+  debug() { return { anim: meAnim, ghostAnim, world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
   generate,
 };
 })();
