@@ -532,6 +532,16 @@ body.shake { animation: shake .45s; }
 .gameMode b { font: 400 clamp(30px, 4.4vw, 46px)/1 'Bebas Neue', Impact, sans-serif; letter-spacing: .04em; }
 .gameMode small { font: 500 14px/1.35 system-ui, sans-serif; color: #e2d8cc; }
 .gmTag { position: absolute; top: 12px; left: 12px; padding: 3px 9px; border-radius: 999px; background: rgba(8,6,14,.7); border: 1px solid rgba(245,170,74,.7); color: #f5aa4a; font: 600 11px system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; }
+/* Story mode is locked on the live site until it's ready; ?dev opens it */
+.gameMode.building { cursor: not-allowed; filter: grayscale(.55) brightness(.75); }
+.gameMode.building:hover, .gameMode.building:focus-visible { transform: none; border-color: rgba(255,255,255,.22); }
+.gmBuild {
+  position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%) rotate(-6deg); z-index: 2; white-space: nowrap;
+  padding: 7px 70px; background: #f5c518; color: #141414; border-block: 6px solid transparent;
+  border-image: repeating-linear-gradient(-45deg, #141414 0 10px, #f5c518 10px 20px) 6;
+  font: 400 clamp(22px, 3vw, 32px)/1 'Bebas Neue', Impact, sans-serif; letter-spacing: .1em; box-shadow: 0 6px 18px rgba(0,0,0,.6);
+}
+.gameMode:not(.building) .gmBuild { display: none; }
 @media (max-width: 560px) { .gameModes { grid-template-columns: 1fr; } .gameMode { min-height: 150px; } }
 @media (max-height: 520px) and (orientation: landscape) {
   .gameMode { min-height: 150px; padding: 12px; }

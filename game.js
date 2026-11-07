@@ -1032,7 +1032,8 @@ G.toMenu = toMenu;
 
 // The main menu: the race (Escape the Island) or story mode
 $('#goRace').addEventListener('click', () => { Sfx.init(); showScreen('home'); });
-$('#goStory').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'solo'; G.StoryMode.begin(); });
+if (/[?&]dev\b/.test(location.search)) $('#goStory').classList.remove('building');
+$('#goStory').addEventListener('click', () => { if ($('#goStory').classList.contains('building')) return; Sfx.init(); goFullscreen(); Net.leave(true); mode = 'solo'; G.StoryMode.begin(); });
 $('#toMain').addEventListener('click', () => showScreen('main'));
 $('#selBack').addEventListener('click', toMenu);
 // Story mode's plane escape: the race's own jungle, cockpit and flight, played alone
