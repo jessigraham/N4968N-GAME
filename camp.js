@@ -25,31 +25,36 @@ const GLOWS = [   // warm light sources that flicker: [x, y, radius, rgb]
   [0.158, 0.575, 0.07, '255,190,110'],  // tent lantern
   [0.385, 0.540, 0.09, '255,220,140'],  // greenhouse
 ];
-const ASPECT = 6336 / 2688;   // panorama width / height, so distances across and down feel the same
-const START = { x: 0.50, y: 0.93 }, TRAIL = { x: 0.545, y: 0.70 };
+const CAMP_ASPECT = 6336 / 2688;
+let ASPECT = CAMP_ASPECT;   // panorama width / height, so distances across and down feel the same (story scenes bring their own)
+const CAMP_START = { x: 0.50, y: 0.93 }, START = CAMP_START, TRAIL = { x: 0.545, y: 0.70 };
 
 // Where you can walk: in front of the tent, greenhouse and crates, up the trail, onto the dock, around the fire.
-function backEdge(x) {
+function campBackEdge(x) {
   if (x < 0.30) return 0.735;   // the tent and its table
   if (x < 0.47) return 0.725;   // the greenhouse
   if (x < 0.585) return 0.655;  // the trail into the trees
   if (x < 0.78) return 0.755;   // crates and fuel drums
   return 0.77;                  // the dock
 }
-function walkable(x, y) {
-  if (x < 0.03 || x > 0.97 || y > 0.975 || y < backEdge(x)) return false;
+function campWalkable(x, y) {
+  if (x < 0.03 || x > 0.97 || y > 0.975 || y < campBackEdge(x)) return false;
   const fx = (x - 0.505) * ASPECT / 0.13, fy = (y - 0.835) / 0.045;   // the campfire
   return fx * fx + fy * fy > 1;
 }
 // how tall a person is when standing at depth y (bigger toward the front)
-const personH = y => 0.23 + (y - 0.74) * 0.7;
+const campPersonH = y => 0.23 + (y - 0.74) * 0.7;
+// a story scene can bring its own panorama, ground and scale: scene.walkable, scene.backEdge, scene.personH
+const backEdge = x => scene && scene.backEdge ? scene.backEdge(x) : campBackEdge(x);
+const walkable = (x, y) => scene && scene.walkable ? scene.walkable(x, y) : campWalkable(x, y);
+const personH = y => scene && scene.personH ? scene.personH(y) : campPersonH(y);
 
 // Side-view walk frames (assets/characters/walk/<char>-0..2.png): right foot forward, passing, left foot forward.
 // ax: where the body's centre sits across each frame, so frames line up on the torso instead of the swinging legs.
 const WALK = {
   ivy: [0.483, 0.41, 0.435], wren: [0.475, 0.496, 0.528], elias: [0.581, 0.609, 0.549], kip: [0.433, 0.477, 0.439],
 };
-const FIG = { ivy: 436 / 576, wren: 447 / 576, elias: 502 / 576, kip: 472 / 576 };   // figure height in the standing picture
+const FIG = { ivy: 436 / 576, wren: 447 / 576, elias: 502 / 576, kip: 472 / 576, briar: 335 / 576 };   // figure height in the standing picture
 const CYCLE = [0, 1, 2, 1];   // the four beats of one full stride
 
 const imgs = {};
@@ -58,6 +63,8 @@ let pano = null;
 
 let el, canvas, ctx, W = 0, H = 0, dpr = 1, running = false, looping = false, last = 0, t = 0;
 let o = null, me, keys = {}, got, mine, flies = [], msg = { text: '', until: 0 }, rival = null, bot = null, packedAll = false;
+// Story mode runs in this same camp: `scene` swaps the items for its own things to look at and people to talk to.
+let scene = null, things = ITEMS;
 let lineTimer = 0, lastDt = 0, lastSend = 0, nextBeat = 0, pulse = 0, walkTo = null, hintAt = 0, camU = 0.5;
 
 function build() {
@@ -66,7 +73,7 @@ function build() {
   el.id = 'camp'; el.className = 'hidden';
   el.innerHTML = `
     <canvas id="campCanvas"></canvas>
-    <div class="campTop"><p class="role">Base camp</p><h2 id="campTitle"></h2><p id="campText"></p></div>
+    <div class="campTop"><p class="role" id="campRole">Base camp</p><h2 id="campTitle"></h2><p id="campText"></p></div>
     <div class="campRival hidden" id="campRival"></div>
     <div class="campMsg" id="campMsg"></div>
     <div class="campPrompt hidden" id="campPrompt"></div>
@@ -78,7 +85,7 @@ function build() {
   window.addEventListener('resize', size);
   canvas.addEventListener('pointerdown', tap);
   window.addEventListener('keydown', e => {
-    if (!running) return;
+    if (!running || (scene && scene.paused)) return;
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS'].includes(e.code)) { keys[e.code] = true; walkTo = null; e.preventDefault(); }
     if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) {
       e.preventDefault();
@@ -117,39 +124,48 @@ const panoReady = () => pano && pano.complete && pano.naturalWidth > 0;
 // ---------- camera: the whole height of the camp in view, following you left and right ----------
 function cam() {
   const pw = pano.naturalWidth, ph = pano.naturalHeight;
-  const k = Math.max(H / ph, W / pw);
+  let k = Math.max(H / ph, W / pw);
+  if (scene && scene.firstPerson) {   // through your own eyes: walking deeper into camp moves the whole world toward you
+    const [front, back] = scene.depth || [0.975, 0.655];
+    const near = clamp((front - me.y) / (front - back), 0, 1);
+    const [z0, z1] = scene.zoom || [1.25, 1.9];
+    k *= z0 + near * z1;
+    const halfH = H / 2 / (ph * k), halfW = W / 2 / (pw * k);
+    const bob = Math.sin((me.step || 0) * Math.PI) * (me.gait || 0) * 0.0035;
+    return { k, pw, ph, u: clamp(camU, halfW, 1 - halfW), v: clamp(me.y + 0.035 - halfH + bob, halfH, 1 - halfH), halfW };
+  }
   const halfW = W / 2 / (pw * k), halfH = H / 2 / (ph * k);
   return { k, pw, ph, u: clamp(camU, halfW, 1 - halfW), v: clamp(0.5, halfH, 1 - halfH), halfW };
 }
 const toScreen = (c, x, y) => [W / 2 + (x - c.u) * c.pw * c.k, H / 2 + (y - c.v) * c.ph * c.k];
 const toPano = (c, sx, sy) => [c.u + (sx - W / 2) / (c.pw * c.k), c.v + (sy - H / 2) / (c.ph * c.k)];
 
-const taken = id => got.has(id) || (bot && bot.got.has(id)) || (rival && !bot && (rival.got || []).includes(id));
+const taken = id => scene ? !!things[id].off : got.has(id) || (bot && bot.got.has(id)) || (rival && !bot && (rival.got || []).includes(id));
 
 // ---------- input ----------
 function tap(e) {
-  if (!running || !panoReady()) return;
+  if (!running || !panoReady() || (scene && scene.paused)) return;
   const r = canvas.getBoundingClientRect(), c = cam();
   const sx = e.clientX - r.left, sy = e.clientY - r.top;
   // an item you tapped: walk over and pick it up
   let best = null, bd = 1e9;
-  for (const [id, it] of Object.entries(ITEMS)) {
+  for (const [id, it] of Object.entries(things)) {
     if (taken(id)) continue;
     const [x, y] = toScreen(c, it.x, it.y), h = it.h * c.ph * c.k;
     const d = Math.hypot(sx - x, sy - (y - h / 2));
     if (d < Math.max(40, h * 0.9) && d < bd) { bd = d; best = id; }
   }
-  if (best) { walkTo = { x: ITEMS[best].gx, y: ITEMS[best].gy, id: best }; return; }
+  if (best) { walkTo = { x: things[best].gx, y: things[best].gy, id: best }; return; }
   // the ground: walk there (or as close as you can get)
   let [px, py] = toPano(c, sx, sy);
-  py = clamp(py, backEdge(px), 0.975); px = clamp(px, 0.03, 0.97);
+  py = clamp(py, backEdge(px), scene && scene.depth ? scene.depth[0] : 0.975); px = clamp(px, 0.03, 0.97);
   walkTo = { x: px, y: py };
 }
 
 // the item you're standing close enough to reach
 function reachable() {
   let best = null, bd = 1e9;
-  for (const [id, it] of Object.entries(ITEMS)) {
+  for (const [id, it] of Object.entries(things)) {
     if (taken(id)) continue;
     const d = Math.hypot((me.x - it.gx) * ASPECT, me.y - it.gy);
     if (d < 0.07 && d < bd) { bd = d; best = id; }
@@ -158,6 +174,7 @@ function reachable() {
 }
 function tryPack(id) {
   id = id || reachable();
+  if (scene) { if (id) scene.use(id); return; }
   if (!id) { say('Walk up to something to pick it up.'); return; }
   const it = ITEMS[id];
   if (it.owner !== o.char) {
@@ -206,7 +223,7 @@ function move(p, dt, speed, max) {
   const depth = personH(p.y) / 0.23;
   const g = Math.min(1, speed / (0.075 * depth));
   p.gait = (p.gait || 0) + (g - (p.gait || 0)) * (1 - Math.exp(-dt * 8));
-  p.faceS = p.faceS === undefined ? (p.face || 1) : p.faceS + ((p.face || 1) - p.faceS) * (1 - Math.exp(-dt * 10));   // swing round, don't flip
+  p.faceS = p.faceS === undefined ? (p.face || 1) : p.faceS + ((p.face || 1) - p.faceS) * (1 - Math.exp(-dt * 14));   // swing round, don't flip
   p.moving = p.gait > 0.12;
   const before = Math.floor(p.step || 0);
   p.step = (p.step || 0) + speed * dt / (STRIDE * depth);
@@ -267,12 +284,16 @@ function updateRivalChip(r) {
 function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const c = cam();
+  if (scene && scene.shake) ctx.translate((Math.random() - 0.5) * scene.shake, (Math.random() - 0.5) * scene.shake);   // the ground shakes
   const [x0, y0] = toScreen(c, 0, 0);
   ctx.drawImage(pano, x0, y0, c.pw * c.k, c.ph * c.k);
+  if (scene && scene.under) scene.under(ctx, c, toScreen, W, H, t);
+  if (scene && scene.dark) { ctx.fillStyle = `rgba(6,4,14,${scene.dark * 0.62})`; ctx.fillRect(0, 0, W, H); }   // the generator is out: only the fire is left
 
   // flickering firelight and lantern glow
   ctx.globalCompositeOperation = 'lighter';
-  GLOWS.forEach(([gx, gy, gr, rgb], i) => {
+  ((scene && scene.glows) || GLOWS).forEach(([gx, gy, gr, rgb], i) => {
+    if (i && scene && scene.dark > 0.5) return;
     const [sx, sy] = toScreen(c, gx, gy), r = gr * c.ph * c.k;
     const f = 0.10 + 0.06 * Math.sin(t * (7 + i * 3)) + 0.04 * Math.sin(t * 13.7 + i);
     const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
@@ -294,11 +315,13 @@ function draw() {
   updateRivalChip(r);
   const reach = packedAll ? null : reachable();
   const sprites = [];
-  for (const [id, it] of Object.entries(ITEMS)) if (!taken(id)) sprites.push({ y: it.y, draw: () => drawItem(c, id, it, id === reach) });
+  for (const [id, it] of Object.entries(things)) if (!taken(id)) sprites.push({ y: it.y, draw: () => scene && !it.img ? drawMark(c, it, id === reach) : drawItem(c, id, it, id === reach) });
+  if (scene) for (const a of scene.actors) if (!a.gone && !(scene.firstPerson && a.y > me.y + 0.012)) sprites.push({ y: a.y, draw: () => drawPerson(c, a, a.label, '#d8cfc2') });
   if (r && r.char) sprites.push({ y: r.y, draw: () => drawPerson(c, r, G.CHARS[r.char].short + (r.done ? ' ✓' : ''), '#5ec8e5') });
-  sprites.push({ y: me.y, draw: () => drawPerson(c, me, 'You', '#ffd970') });
+  if (!(scene && scene.firstPerson)) sprites.push({ y: me.y, draw: () => drawPerson(c, me, scene ? '' : 'You', '#ffd970') });
   drawDust(c, lastDt);
   sprites.sort((a, b) => a.y - b.y).forEach(s => s.draw());
+  if (scene && scene.over) scene.over(ctx, c, toScreen, W, H, t);
 
   // where you're walking to
   if (walkTo) {
@@ -312,16 +335,34 @@ function draw() {
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(8,4,14,0.55)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
 
+  if (scene && scene.firstPerson) drawMyHand();
   const p = $('#campPrompt');
   if (reach) {
-    const mineItem = ITEMS[reach].owner === o.char;
-    p.textContent = mineItem ? `Space or tap: pack the ${ITEMS[reach].name}` : `${ITEMS[reach].name}: that’s ${G.CHARS[ITEMS[reach].owner].short}’s`;
+    const mineItem = scene ? true : things[reach].owner === o.char;
+    p.textContent = scene ? things[reach].prompt : mineItem ? `Space or tap: pack the ${things[reach].name}` : `${things[reach].name}: that’s ${G.CHARS[things[reach].owner].short}’s`;
     p.classList.toggle('mine', mineItem);
     p.classList.remove('hidden');
   } else p.classList.add('hidden');
 }
+// first person: your own arm at the edge of the view, swinging as you walk
+function drawMyHand() {
+  const im = img(G.art(`hand-${o.char}.png`));
+  if (!im.complete || !im.naturalWidth) return;
+  const h = Math.min(H * 0.42, W * 0.3), g = me.gait || 0, sw = Math.sin((me.step || 0) * Math.PI) * g;
+  ctx.drawImage(lit(im, '#8a6a78', 0.45, 'multiply') || im, W - h * 0.92 + sw * h * 0.03, H - h * 0.78 + Math.abs(sw) * h * 0.05, h, h);
+}
+// story mode: a soft gold marker on something worth a closer look (people don't need one)
+function drawMark(c, it, inReach) {
+  if (!it.mark) return;
+  const [sx, sy] = toScreen(c, it.x, it.y);
+  const r = (inReach ? 13 : 8) + Math.sin(t * 3.2 + it.x * 20) * 2;
+  const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3);
+  g.addColorStop(0, `rgba(255,217,112,${inReach ? 0.7 : 0.45})`); g.addColorStop(1, 'rgba(255,217,112,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, r * 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffe9b0'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, Math.PI * 2); ctx.fill();
+}
 function drawItem(c, id, it, inReach) {
-  const im = img(`assets/camp/${id}.png`);
+  const im = img(it.img || `assets/camp/${id}.png`);
   if (!im.complete || !im.naturalWidth) return;
   const [sx, sy] = toScreen(c, it.x, it.y);
   const h = it.h * c.ph * c.k, w = h * im.naturalWidth / im.naturalHeight;
@@ -329,7 +370,7 @@ function drawItem(c, id, it, inReach) {
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   ctx.beginPath(); ctx.ellipse(sx, sy - h * 0.02, w * 0.5, h * 0.08, 0, 0, Math.PI * 2); ctx.fill();
   // your own items catch the light; after a while they shimmer as a hint
-  const isMine = it.owner === o.char;
+  const isMine = scene ? !it.built : it.owner === o.char;
   if (isMine && (inReach || t > hintAt)) {
     const glow = inReach ? 0.55 : 0.18 + 0.18 * Math.sin(t * 3);
     const g = ctx.createRadialGradient(sx, sy - h / 2, 0, sx, sy - h / 2, h);
@@ -337,7 +378,10 @@ function drawItem(c, id, it, inReach) {
     ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(sx - h, sy - h * 1.5, h * 2, h * 2); ctx.globalCompositeOperation = 'source-over';
   }
   ctx.globalAlpha = 0.95;
-  ctx.drawImage(lit(im, '#c87a50', 0.16, 'multiply') || im, sx - w / 2, sy - h, w, h);   // warm firelight so cutouts sit in the scene
+  const hop = it.moving ? Math.abs(Math.sin(t * (it.gait || 10))) * h * 0.06 : 0;   // animals bob as they trot
+  ctx.save(); ctx.translate(sx, sy - hop); if (it.flip) ctx.scale(-1, 1);
+  ctx.drawImage(lit(im, scene && scene.tint ? scene.tint[0] : '#c87a50', 0.16, 'multiply') || im, -w / 2, -h, w, h);
+  ctx.restore();   // warm firelight so cutouts sit in the scene
   ctx.globalAlpha = 1;
   if (inReach) {
     ctx.strokeStyle = isMine ? 'rgba(255,217,112,0.9)' : 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
@@ -346,7 +390,7 @@ function drawItem(c, id, it, inReach) {
 }
 // a person on the ground. Everything is driven by gait (0 standing, 1 full walk), so idle, walking and turning blend.
 function drawPerson(c, p, label, color) {
-  const im = img(`assets/characters/${p.char}.png`);
+  const im = img(G.art(`${p.char}.png`));
   if (!im.complete || !im.naturalWidth) return;
   const [sx, sy] = toScreen(c, p.x, p.y);
   const h = personH(p.y) * c.ph * c.k, w = h * im.naturalWidth / im.naturalHeight;
@@ -355,16 +399,19 @@ function drawPerson(c, p, label, color) {
   const bob = g * (1 - contact) * h * 0.028;               // the body rises over each passing step
   const squash = 1 - g * contact * 0.025;                  // and settles a touch as weight lands
   const breathe = (1 - g) * Math.sin(t * 2.1 + p.x * 9) * 0.006;   // standing still, you breathe
-  const lean = g * Math.sign(fs) * 0.045 + g * Math.sin(ph) * 0.018;   // lean into the walk, sway with each step
+  const lean = g * Math.sign(fs) * 0.045 + g * Math.sin(ph) * 0.018   // lean into the walk, sway with each step
+    + (p.dark ? Math.sign(fs) * 0.1 + Math.sin(t * 2 + p.x * 20) * 0.06 : 0);   // the infected lurch
+  const tone = p.dark ? ['#0b0710', 0.94] : (scene && scene.tint) || ['#a0603c', 0.2], fade = p.alpha === undefined ? 1 : p.alpha;
   const sway = g * Math.sin(ph) * w * 0.015;
-  const turn = Math.sign(fs || 1) * Math.max(0.18, Math.abs(fs));   // narrows through a turn instead of flipping
+  const turn = Math.sign(fs || 1) * Math.max(0.5, Math.abs(fs));   // narrows a little through a turn instead of snapping
   // contact shadow: tighter and darker under a planted foot, softer when the body lifts
   ctx.fillStyle = `rgba(0,0,0,${0.42 + contact * g * 0.1})`;
   ctx.beginPath(); ctx.ellipse(sx + sway * 0.5, sy, w * (0.2 + g * 0.03) - bob * 0.4, h * 0.028, 0, 0, Math.PI * 2); ctx.fill();
   // how much of the side-view walk to show: walking sideways at speed is all walk, standing or heading
   // toward or away from the camera is the front view, with a crossfade between so nothing pops
   const vx = Math.abs(p.vx || 0), vy = Math.abs(p.vy || 0);
-  const side = vx + vy > 1e-4 ? vx / (vx + vy * 0.8) : (p.sideW || 0);
+  let side = vx + vy > 1e-4 ? vx / (vx + vy * 0.8) : (p.sideW || 0);
+  if (scene) side = Math.max(side, 0.75);   // story mode: always stride, even heading toward or away from you, rather than glide
   const target = smooth(clamp((g - 0.15) / 0.35, 0, 1)) * smooth(clamp((side - 0.3) / 0.4, 0, 1));
   p.walkW = (p.walkW || 0) + (target - (p.walkW || 0)) * Math.min(1, lastDt * 10);
   const wW = WALK[p.char] ? p.walkW : 0;
@@ -373,25 +420,26 @@ function drawPerson(c, p, label, color) {
   ctx.rotate(lean);
   ctx.scale(turn * (1 + (1 - squash) * 0.6), squash + breathe);
   if (wW < 0.999) {
-    ctx.globalAlpha = Math.min(1, (1 - wW) * 2);   // both views stay solid through the crossfade, so the figure never goes see-through
-    ctx.drawImage(lit(im, '#a0603c', 0.2) || im, -w / 2, -h * (561 / 576), w, h);   // the figure art has a little space under the feet
+    ctx.globalAlpha = fade * Math.min(1, (1 - wW) * 2);   // both views stay solid through the crossfade, so the figure never goes see-through
+    ctx.drawImage(lit(im, tone[0], tone[1]) || im, -w / 2, -h * (561 / 576), w, h);   // the figure art has a little space under the feet
   }
   if (wW > 0.001) {
     // the walk cycle, four beats per stride, each beat dissolving into the next for a smooth gait
     const beat = (p.step || 0) * 2, i = Math.floor(beat), f = beat - i;
     const fh = h * FIG[p.char];
-    const frame = k => { const n = CYCLE[((k % 4) + 4) % 4]; return { im: img(`assets/characters/walk/${p.char}-${n}.png`), ax: WALK[p.char][n] }; };
+    const frame = k => { const n = CYCLE[((k % 4) + 4) % 4]; return { im: img(G.art(`walk/${p.char}-${n}.png`)), ax: WALK[p.char][n] }; };
     const drawFrame = (fr, a) => {
       if (!fr.im.complete || !fr.im.naturalWidth || a <= 0) return;
       const fw = fh * fr.im.naturalWidth / fr.im.naturalHeight;
-      ctx.globalAlpha = a; ctx.drawImage(lit(fr.im, '#a0603c', 0.2) || fr.im, -fw * fr.ax, -fh, fw, fh);
+      ctx.globalAlpha = a * fade; ctx.drawImage(lit(fr.im, tone[0], tone[1]) || fr.im, -fw * fr.ax, -fh, fw, fh);
     };
-    const mix = smooth(clamp((f - 0.6) / 0.4, 0, 1));   // hold each pose, then dissolve into the next
+    const mix = scene ? smooth(f) : smooth(clamp((f - 0.6) / 0.4, 0, 1));   // story mode dissolves the whole way between poses; the race holds each pose a beat
     const ww = Math.min(1, wW * 2);
     drawFrame(frame(i), ww);
     drawFrame(frame(i + 1), ww * mix);
   }
   ctx.restore();
+  if (!label) return;
   ctx.font = '600 13px system-ui, sans-serif'; ctx.textAlign = 'center';
   const tw = ctx.measureText(label).width + 14, ty = sy - h * 0.8 - bob;
   ctx.fillStyle = 'rgba(10,8,18,0.72)'; ctx.fillRect(sx - tw / 2, ty - 17, tw, 20);
@@ -401,7 +449,7 @@ function drawPerson(c, p, label, color) {
 // ---------- your pounding heart: faster and louder while you move, faster still once your rival is packed ----------
 function heartbeat(moving) {
   const S = G.Sfx;
-  if (!S.ctx || S.muted) return;
+  if (!S.ctx || S.muted || (scene && !scene.heart)) return;
   const r = rivalLook(), rushed = r && r.done && !packedAll;
   pulse += ((moving ? 1 : 0) - pulse) * 0.02;
   const bpm = (packedAll ? 92 : 112) + pulse * 34 + (rushed ? 18 : 0);
@@ -418,8 +466,10 @@ function frame(now) {
   if (!running) { looping = false; return; }
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - last) / 1000); last = now; t += dt; lastDt = dt;
-  let dx = ((keys.ArrowRight || keys.KeyD) ? 1 : 0) - ((keys.ArrowLeft || keys.KeyA) ? 1 : 0);
-  let dy = ((keys.ArrowDown || keys.KeyS) ? 1 : 0) - ((keys.ArrowUp || keys.KeyW) ? 1 : 0);
+  const held = scene && scene.paused;
+  if (held) walkTo = null;
+  let dx = held ? 0 : (((keys.ArrowRight || keys.KeyD) ? 1 : 0) - ((keys.ArrowLeft || keys.KeyA) ? 1 : 0));
+  let dy = held ? 0 : (((keys.ArrowDown || keys.KeyS) ? 1 : 0) - ((keys.ArrowUp || keys.KeyW) ? 1 : 0));
   if (walkTo && !dx && !dy) {
     dx = (walkTo.x - me.x) * ASPECT; dy = walkTo.y - me.y;
     if (Math.hypot(dx, dy) < 0.012) {
@@ -433,6 +483,20 @@ function frame(now) {
   if (walkTo && Math.hypot(dx, dy) > 0.03 && me.x === bx && me.y === by) walkTo = null;   // blocked: stop rather than walk on the spot
   heartbeat(me.gait > 0.3);
   if (bot) botStep(dt);
+  if (scene) {
+    for (const a of scene.actors) {
+      if (a.gone) continue;
+      const ax = a.to ? (a.to.x - a.x) * ASPECT : 0, ay = a.to ? a.to.y - a.y : 0;
+      if (Math.hypot(ax, ay) < 0.015) walk(a, 0, 0, dt);
+      else walk(a, ax, ay, dt, a.pace || 0.5);
+    }
+    for (const a of scene.actors) {   // people are solid
+      if (a.gone || a.dark) continue;
+      const ax = (me.x - a.x) * ASPECT, ay = me.y - a.y, d = Math.hypot(ax, ay);
+      if (d < 0.05 && d > 0) { me.x = a.x + ax / d * 0.05 / ASPECT; if (scene.firstPerson) me.y = Math.max(me.y, a.y + 0.005); else me.y = a.y + ay / d * 0.05; }
+    }
+    if (scene.tick) scene.tick(dt, me);
+  }
   else if (rival) {   // glide between network updates
     const k = Math.min(1, dt * 6), ox = rival.x, oy = rival.y;
     rival.x += (rival.tx - rival.x) * k; rival.y += (rival.ty - rival.y) * k;
@@ -444,28 +508,40 @@ function frame(now) {
   if (t > msg.until) $('#campMsg').classList.remove('on');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (!panoReady()) { ctx.fillStyle = '#120c18'; ctx.fillRect(0, 0, W, H); return; }
-  camU += (me.x - camU) * Math.min(1, dt * 3);   // the camera follows you
+  camU += ((scene && scene.focus !== undefined ? scene.focus : me.x) - camU) * Math.min(1, dt * (scene && scene.firstPerson ? 5 : 3));   // the camera follows you
   draw();
 }
 
+// Story mode's cast wears worn-in field clothes (assets/characters/story/); the race keeps its own outfits.
+const RACE_WALK = { ...WALK };
+const STORY_WALK = { briar: [0.449, 0.451, 0.474], ivy: [0.536, 0.416, 0.478], wren: [0.488, 0.479, 0.559], elias: [0.565, 0.620, 0.414], kip: [0.426, 0.416, 0.408] };
+G.useStoryArt = on => { G.storyArt = !!on; Object.assign(WALK, on ? STORY_WALK : RACE_WALK); };
 // the walk art is shared with the jungle run
 G.Walk = { WALK, FIG, CYCLE, lit };
 
 G.Camp = {
+  // story mode passes scene: { things, actors, use(id), tick(dt, me)?, paused, heart, dark, focus? } and role instead of items
   // o: { char, items: [id, id], title, text, rival: { char, bot }?, onPos(pos)?, onPacked()? -> true to wait here, onRun() }
   start(opts) {
     build();
     o = opts;
-    pano = img(window.innerWidth * (window.devicePixelRatio || 1) > 1600 ? 'assets/camp/camp.jpg' : 'assets/camp/camp-sm.jpg');
+    scene = opts.scene || null; things = scene ? scene.things : ITEMS;
+    el.classList.toggle('scene', !!scene);
+    $('#campHelp').innerHTML = `<span class="k">← → ↑ ↓</span> walk <span class="k">Space</span> ${scene ? 'look or talk' : 'pack it'} <span class="tapOnly">${scene ? 'Tap the ground to walk, tap someone to talk' : 'Tap the ground to walk, tap an item to fetch it'}</span>`;
+    $('#campRole').textContent = opts.role || 'Base camp';
+    pano = img(scene && scene.pano ? scene.pano : window.innerWidth * (window.devicePixelRatio || 1) > 1600 ? 'assets/camp/camp.jpg' : 'assets/camp/camp-sm.jpg');
+    ASPECT = scene && scene.aspect ? scene.aspect : CAMP_ASPECT;
+    const START = (scene && scene.start) || CAMP_START;
     Object.keys(ITEMS).forEach(id => img(`assets/camp/${id}.png`));
-    const preload = c => { img(`assets/characters/${c}.png`); [0, 1, 2].forEach(n => img(`assets/characters/walk/${c}-${n}.png`)); };
+    const preload = c => { img(G.art(`${c}.png`)); [0, 1, 2].forEach(n => img(G.art(`walk/${c}-${n}.png`))); };
     preload(opts.char);
     if (opts.rival && opts.rival.char) preload(opts.rival.char);
-    mine = opts.items; got = new Set(); packedAll = false; t = 0; hintAt = 14; walkTo = null; keys = {}; nextBeat = 0.5; pulse = 0;
-    me = { char: opts.char, x: START.x - 0.07, y: START.y, face: 1, moving: false, step: 0, vx: 0, vy: 0, gait: 0 };
+    if (scene) scene.actors.forEach(a => preload(a.char));
+    mine = opts.items || []; got = new Set(); packedAll = false; t = 0; hintAt = 14; walkTo = null; keys = {}; nextBeat = 0.5; pulse = 0;
+    me = { char: opts.char, x: START.x - (scene && scene.start ? 0 : 0.07), y: START.y, face: 1, moving: false, step: 0, vx: 0, vy: 0, gait: 0 };
     dust.length = 0;
     camU = me.x;
-    flies = Array.from({ length: 46 }, () => ({ x: Math.random(), y: 0.3 + Math.random() * 0.55, r: 0.6 + Math.random() * 1.2, s: 0.3 + Math.random() * 0.6, b: 1 + Math.random() * 2.5, p: Math.random() * 7 }));
+    flies = scene && scene.flies === false ? [] : Array.from({ length: 46 }, () => ({ x: Math.random(), y: 0.3 + Math.random() * 0.55, r: 0.6 + Math.random() * 1.2, s: 0.3 + Math.random() * 0.6, b: 1 + Math.random() * 2.5, p: Math.random() * 7 }));
     rival = null; bot = null;
     if (opts.rival && opts.rival.bot && opts.rival.char) {
       const list = Object.keys(ITEMS).filter(id => ITEMS[id].owner === opts.rival.char);
@@ -478,10 +554,10 @@ G.Camp = {
     renderSlots();
     el.classList.remove('hidden');
     size();
-    say(`Find your ${mine.map(id => ITEMS[id].name.replace(/^(Your|The) /, '').replace(/^./, ch => ch.toLowerCase())).join(' and your ')}.`);
-    msg.until = 5;
+    if (!scene) say(`Find your ${mine.map(id => ITEMS[id].name.replace(/^(Your|The) /, '').replace(/^./, ch => ch.toLowerCase())).join(' and your ')}.`);
+    if (!scene) msg.until = 5;
     G.Sfx.ambience(true);
-    clearTimeout(lineTimer); lineTimer = setTimeout(() => { if (running) G.Sfx.playFile(`assets/voice/${opts.char}-camp.mp3`); }, 900);   // a hushed line as you arrive
+    clearTimeout(lineTimer); if (!scene) lineTimer = setTimeout(() => { if (running) G.Sfx.playFile(`assets/voice/${opts.char}-camp.mp3`); }, 900);   // a hushed line as you arrive
     running = true; last = performance.now();
     if (!looping) { looping = true; requestAnimationFrame(frame); }
   },
@@ -495,6 +571,9 @@ G.Camp = {
   wait(text) { if (el && running) { $('#campDoneText').textContent = text; $('#campRun').classList.add('hidden'); } },
   stop() { running = false; keys = {}; clearTimeout(lineTimer); if (el) el.classList.add('hidden'); },
   get running() { return running; },
+  get me() { return me; },
+  say,
+  hud(title, text) { $('#campTitle').textContent = title; $('#campText').textContent = text || ''; },
   items: ITEMS,
   // for testing: pack both items at once
   debugPackAll() { mine.forEach(id => { if (!got.has(id)) tryPack(id); }); },

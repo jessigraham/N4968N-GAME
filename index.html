@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0b0d">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>N4968N Cockpit Race</title>
+<title>Last Flight Out</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Allerta+Stencil&display=swap">
@@ -65,10 +65,26 @@
 <div id="menu" class="overlay">
   <canvas id="introBg"></canvas>
   <button id="introSound" type="button" aria-label="Sound">🔈 Sound off</button>
+  <button id="toMain" type="button">‹ Main menu</button>
   <div id="rivalChip" class="hidden"></div>
   <div class="card bare">
-    <!-- home: the title screen -->
-    <div class="screen" data-screen="home">
+    <!-- main menu: choose the race or the story -->
+    <div class="screen" data-screen="main">
+      <div class="hero">
+        <h1 class="title"><span class="t1">Last Flight Out</span></h1>
+        <p class="tagline">The fever is spreading. The radio is dead.<br>One airstrip. One way out.</p>
+      </div>
+      <div class="gameModes">
+        <button id="goRace" type="button" class="gameMode race">
+          <span class="gmTag">Race</span><b>Escape the Island</b><small>Beat a rival to the planes. Play solo, against a bot, or with a friend.</small>
+        </button>
+        <button id="goStory" type="button" class="gameMode tale">
+          <span class="gmTag">New</span><b>Story Mode</b><small>Chapter 1: Landfall. Wash up on an island under a volcano, find the survivors, and build a village before the mountain loses patience.</small>
+        </button>
+      </div>
+    </div>
+    <!-- home: the race's title screen -->
+    <div class="screen hidden" data-screen="home">
       <div class="hero">
         <h1 class="title"><span class="t1">Escape the Island</span><span class="tail">N4968N</span></h1>
         <p class="tagline">The fever is spreading. The radio is dead.<br>One airstrip. One way out.</p>
@@ -121,6 +137,7 @@
     <div class="screen hidden" data-screen="select">
       <h2 class="cine">Who are you?</h2>
       <div id="selectCards"></div>
+      <button id="selBack" type="button" class="link">Main menu</button>
     </div>
     <!-- backstory -->
     <div class="screen hidden" data-screen="backstory">
@@ -211,6 +228,8 @@
 <script src="game.js"></script>
 <script src="camp.js"></script>
 <script src="story.js"></script>
+<script src="storymode.js"></script>
+<script src="island.js"></script>
 <script src="ending.js"></script>
 </body>
 </html>

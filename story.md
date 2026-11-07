@@ -73,3 +73,17 @@ Engine catches: "Come on... come on, come on!"
 Mistake: "No, no, no! Not now!"
 Zombies at the glass: "Whoa!"
 Airborne: "We're up... we made it."
+
+# Story mode
+
+Played in first person, from the main menu.
+
+**Chapter 1: Landfall** (built). Third person: you watch your character walk. Five places joined into one map (a little map in the corner shows where you are): the beach with your plane, the jungle trail, the clearing under the volcano, the river and the hunting grounds. Walk onto a gold arrow to travel. Two other characters are surviving in the clearing. Gather wood, palm fronds, stones, bamboo and vine; fish the river (cast, wait for the bobber to dip, reel in); hunt boar and jungle fowl (they bolt if you rush them). Build in order: a shelter (3 wood, 2 fronds), a fire pit (4 stones, 1 wood), a meal (2 fish, 1 meat) and a rain catcher (2 bamboo, 2 vine). Each has a deadline. Miss one and the volcano rumbles, miss two and ash falls, miss three and it erupts. Finishing one calms it a step. One survivor can be asked to bring you wood.
+
+**The Last Night** (built, not in the menu): the camp chapter on the night the radio died, kept for a flashback later.
+
+# New character
+
+**Briar "Tigerclaw" Thorne**, 10, daughter of Dr. Ivy Thorne. Story mode only. Torn safari outfit, three tiger claw marks on her arm. Weapon: slingshot. Voiced with a stock ElevenLabs character voice (Lulu), not cloned from anyone. In story mode only her lines are voiced so far.
+
+Line: "I already fought a tiger. Zombies are slower."

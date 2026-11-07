@@ -477,6 +477,7 @@ const WEAPON = {
   wren: { reach: 105, cone: 1.5, knock: 520, stun: 1.2 },
   elias: { reach: 90, cone: 1.3, knock: 560, stun: 1.0 },
   kip: { reach: 230, cone: 0.8, knock: 0, stun: 2.0 },
+  briar: { reach: 260, cone: 0.45, knock: 480, stun: 1.0 },
 };
 const SORRY = ['Sorry! So sorry!', 'Pardon me!', 'Nothing personal!', 'Oh dear, my apologies!', 'Terribly sorry!'];
 let floats = [];
@@ -683,7 +684,7 @@ function drawWalker(a, char, x, y, alpha, hit) {
   if (ww > 0.001) {
     // four beats per stride (right foot, passing, left foot, passing), each dissolving into the next
     const beat = (a.step || 0) * 2, i = Math.floor(beat), f = beat - i, fh = h * W8.FIG[char];
-    const frame = k => { const n = W8.CYCLE[((k % 4) + 4) % 4]; return { im: imgs['w' + char + n] || (imgs['w' + char + n] = Object.assign(new Image(), { src: `assets/characters/walk/${char}-${n}.png` })), ax: W8.WALK[char][n] }; };
+    const frame = k => { const n = W8.CYCLE[((k % 4) + 4) % 4]; return { im: charImg(`walk/${char}-${n}`), ax: W8.WALK[char][n] }; };
     const put = (fr, al) => { if (!fr.im.complete || !fr.im.naturalWidth || al <= 0) return; const fw = fh * fr.im.naturalWidth / fr.im.naturalHeight; ctx.globalAlpha = al; ctx.drawImage(tint(fr.im), -fw * fr.ax, -fh, fw, fh); };
     const solid = alpha * Math.min(1, ww * 2), mix = smooth(clamp((f - 0.6) / 0.4, 0, 1));
     put(frame(i), solid); put(frame(i + 1), solid * mix);
@@ -693,7 +694,7 @@ function drawWalker(a, char, x, y, alpha, hit) {
 }
 
 const imgs = {};
-const charImg = c => imgs[c] || (imgs[c] = Object.assign(new Image(), { src: `assets/characters/${c}.png` }));
+const charImg = c => { const src = G.art(`${c}.png`); return imgs[src] || (imgs[src] = Object.assign(new Image(), { src })); };
 // Photoreal ground and canopy art (assets/jungle). Ground textures tile seamlessly; scale = world units per texture pixel.
 const TEX = { floor: 0.7, trail: 0.42, water: 0.8, clear: 0.95, strip: 0.55, bridge: 0.22 };
 const tex = n => imgs['t' + n] || (imgs['t' + n] = Object.assign(new Image(), { src: `assets/jungle/${n}.jpg` }));
@@ -952,6 +953,11 @@ function drawAttack() {
     ctx.beginPath(); ctx.arc(x, y, 60, dir - 1 + k * 2, dir - 0.6 + k * 2); ctx.stroke();
     ctx.fillStyle = `rgba(110,190,90,${1 - k})`;
     for (let i = 0; i < 8; i++) { const a = dir + (i - 4) * 0.3, r = 40 + k * 80 + i * 4; ctx.beginPath(); ctx.ellipse(x + Math.cos(a) * r, y + Math.sin(a) * r, 6, 3, a + k * 6, 0, TAU); ctx.fill(); }
+  } else if (opts.char === 'briar') { // slingshot: a stone streaking out
+    const L = 260 * Math.min(1, k * 2);
+    ctx.strokeStyle = `rgba(240,225,190,${0.7 * (1 - k)})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x + Math.cos(dir) * L * 0.6, y + Math.sin(dir) * L * 0.6); ctx.lineTo(x + Math.cos(dir) * L, y + Math.sin(dir) * L); ctx.stroke();
+    ctx.fillStyle = `rgba(190,180,160,${1 - k})`; ctx.beginPath(); ctx.arc(x + Math.cos(dir) * L, y + Math.sin(dir) * L, 6, 0, TAU); ctx.fill();
   } else {                            // camera flash: a white cone
     const g = ctx.createRadialGradient(x, y, 0, x, y, 240);
     g.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - k)})`); g.addColorStop(1, 'rgba(255,255,255,0)');

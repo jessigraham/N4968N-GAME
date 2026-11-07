@@ -14,8 +14,9 @@ const REST_R = [1260, 1120], REST_L = [330, 1120];
 // Load each character's hand once and find the fingertip (the top-left-most solid pixel).
 const imgs = {};
 function handImage(char) {
-  if (imgs[char]) return imgs[char];
-  const rec = imgs[char] = { img: new Image(), ready: false, tip: [150, 95], w: 512 };
+  const src = G.art(`hand-${char}.png`);
+  if (imgs[src]) return imgs[src];
+  const rec = imgs[src] = { img: new Image(), ready: false, tip: [150, 95], w: 512 };
   rec.img.onload = () => {
     rec.w = rec.img.naturalWidth;
     try {
@@ -29,7 +30,7 @@ function handImage(char) {
     } catch (e) { /* keep the default fingertip */ }
     rec.ready = true;
   };
-  rec.img.src = `assets/characters/hand-${char}.png`;
+  rec.img.src = src;
   return rec;
 }
 G.preloadHands = () => ['ivy', 'wren', 'elias', 'kip'].forEach(handImage);

@@ -50,9 +50,14 @@ const BIOS = {
     text: 'You left the frog in its jar somewhere in camp. It looks worried. Something big just stepped into the river behind you.',
     items: ['frog', 'camera'],
   },
+  briar: {
+    teaser: 'Fought a tiger. Has the arm to prove it.',
+    story: 'Briar Thorne is ten, and she has spent three of those years on Kanoa with her mother, Dr. Ivy Thorne. Nobody told her she couldn’t go exploring, or at least she says nobody did. Last summer a tiger took a swipe at her on the ridge trail and left three claw marks down her arm. She hit it with a slingshot stone and it left. She knows every shortcut the grown-ups don’t.',
+    line: 'I already fought a tiger. Zombies are slower.',
+  },
 };
 
-let onDone = null, onPick = null, onPacked = null, step = 0, timer = 0, chosen = null;
+let onChosen = null, onDone = null, onPick = null, onPacked = null, step = 0, timer = 0, chosen = null;
 
 function show(name) { G.showScreen(name); }
 
@@ -73,14 +78,17 @@ $('#storySkip').addEventListener('click', () => { clearTimeout(timer); toSelect(
 // ---------- choose your researcher ----------
 function toSelect() {
   clearTimeout(timer);
+  $('#selectCards').classList.toggle('all', !!onChosen);   // story-only characters show up in story mode
+  G.useStoryArt(!!onChosen);                               // and everyone wears their worn-in field clothes
+  document.querySelectorAll('#selectCards .pcard').forEach(b => { b.querySelector('img').src = G.art(`${b.dataset.char}.png`); });
   G.Intro.setScene('jungle');
   show('select');
 }
 const cards = $('#selectCards');
 for (const [id, c] of Object.entries(G.CHARS)) {
   const b = document.createElement('button');
-  b.type = 'button'; b.className = 'pcard'; b.dataset.char = id;
-  b.innerHTML = `<img src="assets/characters/${id}.png" alt=""><span class="role">${c.label}</span><b>${c.name}</b><small>${BIOS[id].teaser}</small><span class="weapon">${c.icon} Weapon: ${c.weapon}</span>`;
+  b.type = 'button'; b.className = 'pcard' + (c.storyOnly ? ' storyOnly' : ''); b.dataset.char = id;
+  b.innerHTML = `<img alt=""><span class="role">${c.label}</span><b>${c.name}</b><small>${BIOS[id].teaser}</small><span class="weapon">${c.icon} Weapon: ${c.weapon}</span>`;
   b.addEventListener('click', () => toBackstory(id));
   cards.appendChild(b);
 }
@@ -89,7 +97,7 @@ for (const [id, c] of Object.entries(G.CHARS)) {
 function toBackstory(id) {
   chosen = id;
   const c = G.CHARS[id], bio = BIOS[id];
-  $('#bsImg').src = `assets/characters/${id}.png`;
+  $('#bsImg').src = G.art(`${id}.png`);
   $('#bsRole').textContent = c.label;
   $('#bsName').textContent = c.name;
   $('#bsStory').textContent = bio.story;
@@ -100,7 +108,12 @@ function toBackstory(id) {
   G.Sfx.playFile(`assets/voice/${id}-intro.mp3`);
 }
 $('#bsBack').addEventListener('click', () => { G.Sfx.stopFile(); show('select'); });
-$('#bsGo').addEventListener('click', () => { G.Sfx.stopFile(); if (onPick) onPick(chosen); toPath(chosen); });
+$('#bsGo').addEventListener('click', () => {
+  G.Sfx.stopFile();
+  if (onChosen) { onChosen(chosen); return; }   // story mode takes it from here
+  if (onPick) onPick(chosen);
+  toPath(chosen);
+});
 
 // ---------- base camp: find your two things and pack your bag, then run ----------
 function toPath(id) {
@@ -131,13 +144,15 @@ G.Story = {
   // Start the opening. pick(char) fires when a researcher is chosen; done(char) when they reach the airstrip.
   // packed(char) fires online when the bag is packed: return true to wait in camp for the rival.
   begin(pick, done, packed) {
-    onPick = pick; onDone = done; onPacked = packed || null; step = 0; chosen = null;
+    onChosen = null; onPick = pick; onDone = done; onPacked = packed || null; step = 0; chosen = null;
     G.Intro.setScene('story');
     show('story');
     storyLine();
   },
   // straight to choosing a researcher (after a game, to switch characters)
-  chooseAgain(pick, done, packed) { onPick = pick; onDone = done; onPacked = packed || null; chosen = null; toSelect(); },
+  chooseAgain(pick, done, packed) { onChosen = null; onPick = pick; onDone = done; onPacked = packed || null; chosen = null; toSelect(); },
+  // the same character screens, for story mode
+  chooseFor(cb) { onChosen = cb; chosen = null; toSelect(); },
   stop() { clearTimeout(timer); G.Sfx.stopFile(); if (G.Camp) G.Camp.stop(); },
 };
 })();

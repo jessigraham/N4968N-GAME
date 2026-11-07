@@ -119,6 +119,8 @@ let me = null, opp = null, oppGone = false;
 let wantAgain = { me: false, them: false };
 let lastSend = 0;
 
+G.art = file => `assets/characters/${G.storyArt ? 'story/' : ''}${file}`;   // story mode has its own outfits
+
 // The four researchers you can play (all fictional). `path` picks the story path, `voice` the recorded lines.
 const CHARS = G.CHARS = {
   ivy: { name: 'Dr. Ivy Thorne', short: 'Ivy', path: 'botanist', label: 'Botanist', voice: 'ivy',
@@ -129,6 +131,8 @@ const CHARS = G.CHARS = {
     weapon: 'The Fern', icon: '🪴', weaponLine: 'He swings his potted fern by the pot like a club. The fern is always fine. He always apologizes.' },
   kip: { name: 'Kip “Compass” Monroe', short: 'Kip', path: 'safari', label: 'Jungle Explorer', voice: 'kip',
     weapon: 'Camera Flash', icon: '📸', weaponLine: 'A blinding flash that freezes zombies in place for a couple of seconds.' },
+  briar: { name: 'Briar “Tigerclaw” Thorne', short: 'Briar', path: 'safari', label: 'Youngest Explorer', voice: 'briar', storyOnly: true,
+    weapon: 'Slingshot', icon: '🪃', weaponLine: 'A long, straight shot that knocks zombies off their feet from way down the trail.' },
 };
 const charName = c => (CHARS[c] || CHARS.ivy).name;
 let myChar = 'ivy';
@@ -484,7 +488,7 @@ function packedOnline() {
 G.campRival = () => mode === 'bot' && oppChar ? { char: oppChar, bot: true } : mode === 'online' ? { char: oppChar, bot: false } : null;
 G.campSend = pos => { if (mode === 'online') Net.send({ t: 'camp', char: myChar, ...pos }); };
 function pickBot() {   // one of the three researchers you didn't pick
-  const others = Object.keys(CHARS).filter(c => c !== myChar);
+  const others = Object.keys(CHARS).filter(c => c !== myChar && !CHARS[c].storyOnly);
   oppChar = others[Math.floor(Math.random() * others.length)];
   updateRival();
 }
@@ -672,12 +676,12 @@ meCanvas.addEventListener('contextmenu', e => e.preventDefault());
 // ---------- Screens and race flow ----------
 function showScreen(name) {
   document.querySelectorAll('#menu .screen').forEach(s => s.classList.toggle('hidden', s.dataset.screen !== name));
-  $('#menu .card').classList.toggle('bare', ['home', 'story', 'select', 'backstory', 'path', 'airstrip'].includes(name));
+  $('#menu .card').classList.toggle('bare', ['main', 'home', 'story', 'select', 'backstory', 'path', 'airstrip'].includes(name));
   $('#menu').dataset.screen = name;
   $('#menu').classList.remove('hidden');
   G.Intro.start();
   if (soundWanted) Sfx.ambience(true);
-  if (name === 'home') G.Intro.setScene('jungle');
+  if (name === 'home' || name === 'main') G.Intro.setScene('jungle');
   updateRival();
 }
 G.showScreen = showScreen;
@@ -866,13 +870,20 @@ const WIN_LINES = {
   wren: 'Trail’s done. Riptide out.',
   elias: 'Fern secure. Permission to cry.',
   kip: 'First time I’ve ever known which way I’m going. Up.',
+  briar: 'A tiger couldn’t stop me. You had no chance.',
 };
 let againMsg = '';
 let endingShown = false, cardShown = false, playedWinFor = null, cardTimer = 0, statTimers = [];
 let myJungle = { time: 0, deaths: 0, kills: 0 }, oppJungle = { time: 0, deaths: 0 };
 
+let storyAfter = null;   // story mode: what happens once you've escaped, instead of the race's winner card
 function startEnding() {
   endingShown = true;
+  if (storyAfter && me.flight && me.flight.win) {
+    const go = storyAfter; storyAfter = null;
+    setTimeout(() => { G.Flight.stop(); G.Ending.flyout(() => { hideEnding(); state = 'menu'; document.body.classList.remove('playing'); $('#quitBtn').classList.add('hidden'); go(); }); }, 300);
+    return;
+  }
   if (me.flight && me.flight.win) setTimeout(() => { G.Flight.stop(); G.Ending.flyout(showCard); }, 300);   // escaped: watch it fly away
   else if (me.flight) setTimeout(() => { G.Flight.stop(); showCard(); }, 400);                             // lost in the storm
   else setTimeout(showCard, 2200);                                                                         // left on the strip
@@ -1002,10 +1013,12 @@ function hideEnding() {
 }
 
 function toMenu() {
+  storyAfter = null;
+  G.useStoryArt(false);
   Net.leave(true);
   [me, opp].forEach(p => p && p.voice && p.voice.stop());
   me = newPlayer(0); opp = null;
-  G.Story.stop(); G.Jungle.stop(); hideEnding();
+  G.Story.stop(); G.StoryMode.stop(); G.Jungle.stop(); hideEnding();
   $('#timer .lbl').textContent = 'Zombies overrun the airstrip in';
   mode = 'solo'; state = 'menu';
   $('#arena').className = 'solo';
@@ -1013,8 +1026,17 @@ function toMenu() {
   $('#result').classList.add('hidden');
   $('#quitBtn').classList.add('hidden');
   document.body.classList.remove('playing');
-  showScreen('home');
+  showScreen('main');
 }
+G.toMenu = toMenu;
+
+// The main menu: the race (Escape the Island) or story mode
+$('#goRace').addEventListener('click', () => { Sfx.init(); showScreen('home'); });
+$('#goStory').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'solo'; G.StoryMode.begin(); });
+$('#toMain').addEventListener('click', () => showScreen('main'));
+$('#selBack').addEventListener('click', toMenu);
+// Story mode's plane escape: the race's own jungle, cockpit and flight, played alone
+G.storyRun = (char, after) => { G.StoryMode.hide(); mode = 'solo'; pickChar(char); storyAfter = after; startJungle(newSeed()); };
 
 $('#goSolo').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'solo'; startStory(); });
 $('#goBot').addEventListener('click', () => { Sfx.init(); goFullscreen(); Net.leave(true); mode = 'bot'; startStory(); });
@@ -1173,7 +1195,7 @@ if (saved.host && !joinParam) {
   $('#joinCode').value = code;
   if (saved.join === code) Net.join(code);   // a reload after pressing Join reconnects by itself
   else setStatus('#joinStatus', 'You were invited! Press Join to connect.');
-} else showScreen('home');
+} else showScreen(new URLSearchParams(location.search).has('map') ? 'home' : 'main');   // a shared map link goes straight to the race
 
 // Handy for testing from the browser console.
 window.N4968N = { get me() { return me; }, get opp() { return opp; }, get state() { return state; }, get raceT() { return raceT; }, keyDown, keyUp };

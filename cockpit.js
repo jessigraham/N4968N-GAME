@@ -554,7 +554,7 @@ function yoke(ctx, pulled) {
 
 // ---------- the cabin below and beside the panel ----------
 // trouser color by character, and bare knees for shorts
-const PANTS = { ivy: ['#454c62', null], wren: ['#7c6b47', null], elias: ['#3d4352', null], kip: ['#8c7850', '#7a4e33'] };
+const PANTS = { ivy: ['#454c62', null], wren: ['#7c6b47', null], elias: ['#3d4352', null], kip: ['#8c7850', '#7a4e33'], briar: ['#7c7350', '#b58a63'] };
 function interior(ctx, p, t, L, R, B, kneeboard) {
   const fy = 820;
   // kick panel under the dash, then the carpet
