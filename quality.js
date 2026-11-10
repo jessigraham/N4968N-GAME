@@ -16,7 +16,9 @@ G.Quality = {
   get lite() { return level >= 1; },     // no film grain or fever blur
   get bare() { return level >= 3; },     // cheapest dusk tint as well
   dpr() { return scale(level); },
-  // call once per animation frame; returns true when the level just changed so canvases can be resized
+  // a new stage is loading: its first moments say nothing about how fast this computer is
+  settle() { sum = n = 0; skip = 60; },
+  // call once per animation frame during play; returns true when the level just changed so canvases can be resized
   tick(now) {
     const d = now - last; last = now;
     if (document.hidden || d > 4000 || d <= 0) { sum = n = 0; return false; }   // (a long gap is a tab switch, not a slow frame)

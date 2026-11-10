@@ -548,6 +548,7 @@ function rivalBoarded(plane, jungle) {
 }
 let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0, myPlaneId = null;
 function startJungle(seed, resume) {
+  G.Quality.settle();
   currentSeed = seed; myPlaneId = null;
   if (mode === 'online') Net.holdSeat = true;   // from here on, a reload or dropped signal doesn't lose the seat
   Net.forget();   // once the race is on, a reload starts fresh
@@ -746,6 +747,7 @@ function goFullscreen() {
 
 const PLANES = { c172: 'N4968N', piper: 'N5512P' };
 function beginRace(o = {}) {
+  G.Quality.settle();
   Sfx.init();
   hideEnding();
   RACE_TIME = G.RACE_TIME = M().cockpitClock;
@@ -844,6 +846,7 @@ const FLIGHT_PAINT = { c172: '#a8322b', cherokee: '#1f5f9e' };
 function planeLook(p) { const kind = p.planeType === 'cherokee' ? 'cherokee' : 'c172'; return { kind, reg: p.reg, stripe: FLIGHT_PAINT[kind] }; }
 
 function startFlight(resume) {
+  G.Quality.settle();
   if (state === 'menu' || me.flight) return;
   me.flying = true;
   $('#timer .lbl').textContent = 'Storm flight';
@@ -1187,7 +1190,7 @@ function draw() {
   }
 }
 function loop(now) {
-  if (G.Quality.tick(now)) fitAll();
+  if (state !== 'menu' && G.Quality.tick(now)) fitAll();   // only real play counts, not the menus or loading
   try { frame(now); } catch (e) { console.error(e); }   // never let one bad frame stop the game
   requestAnimationFrame(loop);
 }
