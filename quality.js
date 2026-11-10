@@ -10,6 +10,21 @@ const KEY = 'n4968n-quality';
 let level = 0; try { level = Math.min(CAPS.length - 1, Math.max(0, +sessionStorage.getItem(KEY) || 0)); } catch (e) {}
 let last = 0, sum = 0, n = 0, skip = 40;
 
+// how far the phone's notch or Dynamic Island reaches in from each side, for things drawn on a canvas
+// (read fresh every half second: Safari settles the inset after the page has laid out and on every rotation)
+const probe = document.createElement('div');
+probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)';
+let insets = { left: 0, right: 0 }, readAt = -1e9;
+const inset = () => {
+  if (performance.now() - readAt < 500) return insets;
+  readAt = performance.now();
+  if (!probe.isConnected && document.body) document.body.appendChild(probe);
+  const c = getComputedStyle(probe);
+  insets = { left: parseFloat(c.paddingLeft) || 0, right: parseFloat(c.paddingRight) || 0 };
+  return insets;
+};
+G.safe = { get left() { return inset().left; }, get right() { return inset().right; } };
+
 const scale = lv => Math.min(CAPS[lv], window.devicePixelRatio || 1);
 G.Quality = {
   get level() { return level; },

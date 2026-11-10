@@ -918,8 +918,8 @@ function pill(text, x, y, col, fs) {
   ctx.restore();
 }
 function drawRadar() {
-  const s = state, w = s.world, size = Math.min(176, W / dpr * 0.3) * dpr, pad = 14 * dpr;
-  const cx = W - pad - size / 2, cy = H - pad - size / 2 - (matchMedia('(pointer: coarse)').matches ? 80 * dpr : 0), k = size / 2 / 6000;
+  const s = state, w = s.world, size = Math.min(176, W / dpr * 0.3, H / dpr * 0.42) * dpr, pad = 14 * dpr;   // smaller on a short phone screen
+  const cx = W - pad - G.safe.right * dpr - size / 2, cy = Math.max(size / 2 + 10 * dpr, H - pad - size / 2 - (matchMedia('(pointer: coarse)').matches ? 80 * dpr : 0)), k = size / 2 / 6000;
   const P = (x, y) => [cx + (x - s.plane.x) * k, cy + (y - s.plane.y) * k];
   ctx.save();
   ctx.fillStyle = 'rgba(6,14,12,0.8)'; ctx.strokeStyle = 'rgba(123,237,159,0.5)'; ctx.lineWidth = 1.5 * dpr;
@@ -1145,7 +1145,7 @@ function closeHowto() {
 function showHint() {
   if (hud.hint) hud.hint.remove();
   const touch = coarse(), el = document.createElement('div');
-  el.style.cssText = `position:absolute;left:50%;bottom:${touch ? 230 : 22}px;transform:translateX(-50%);z-index:4;pointer-events:none;background:rgba(10,16,22,.82);border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:8px 16px;color:#f3efe6;font:600 14px/1.35 system-ui,sans-serif;text-align:center;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;transition:opacity .6s`;
+  el.style.cssText = `position:absolute;left:50%;bottom:${touch ? 92 : 22}px;transform:translateX(-50%);z-index:4;pointer-events:none;background:rgba(10,16,22,.82);border:1px solid rgba(255,255,255,.2);border-radius:18px;padding:8px 16px;color:#f3efe6;font:600 14px/1.35 system-ui,sans-serif;text-align:center;width:max-content;max-width:calc(100vw - 32px);box-sizing:border-box;transition:opacity .6s`;
   el.innerHTML = (touch ? '◀ ▶ steer · − + throttle' : '← → steer · ↑ ↓ throttle') + ' · follow the <b style="color:#f4b860">gold arrow</b>';
   $('flight').appendChild(el); hud.hint = el;
   setTimeout(() => { el.style.opacity = '0'; }, 6000);

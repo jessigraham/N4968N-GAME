@@ -415,17 +415,19 @@ body {
 .fchip { background: rgba(10,16,22,.72); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; padding: 5px 11px; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14px; }
 .fchip b { font: 400 21px 'Bebas Neue', sans-serif; letter-spacing: .04em; color: var(--famber); }
 .fbadge { font: 400 19px 'Bebas Neue', sans-serif; letter-spacing: .06em; border-width: 1.5px; }
-.fmeters { position: absolute; left: 12px; top: 10px; display: grid; gap: 6px; width: 190px; }
+.fmeters { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 10px; display: grid; gap: 6px; width: 190px; }
 .fmeter { background: rgba(10,16,22,.72); border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 5px 8px; font-size: 12px; color: #9aa8b1; }
 .fbar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); margin-top: 4px; overflow: hidden; }
 .fbar i { display: block; height: 100%; width: 100%; background: var(--fgreen); transition: width .2s; }
 .fmsg { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font: 400 30px 'Bebas Neue', sans-serif; letter-spacing: .05em; text-align: center; text-shadow: 0 2px 12px #000; opacity: 0; transition: opacity .3s; max-width: 90vw; }
 .fmsg.on { opacity: 1; }
-.ftouch { position: absolute; bottom: 14px; left: 0; right: 0; display: none; justify-content: space-between; padding: 0 14px; pointer-events: none; }
+.ftouch { position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 0; right: 0; display: none; justify-content: space-between; padding: 0 max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left)); pointer-events: none; }
 .ftouch div { display: flex; gap: 10px; }
 .ftouch button { pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2); background: rgba(10,16,22,.72); color: #fff; font-size: 26px; touch-action: none; }
 @media (pointer: coarse) { .ftouch { display: flex; } }
 @media (max-width: 960px) { .fmeters { top: 58px; width: 170px; } .ftop { gap: 5px; } .fchip { font-size: 12px; padding: 4px 8px; } }
+/* a phone on its side: small meters on one line each, clear of the steering buttons */
+@media (max-height: 480px) { .fmeters { top: 52px; width: 150px; gap: 4px; } .fmeter { padding: 3px 7px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .fbar { margin-top: 2px; height: 5px; } .fchip b { font-size: 17px; } .ftouch button { width: 56px; height: 56px; } }
 
 /* ---------- the winner and stats screen ---------- */
 #result { flex-direction: column; overflow-y: auto; justify-content: flex-start; padding-top: 3vh; }

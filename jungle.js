@@ -1088,13 +1088,13 @@ function bar(x, y, w, h, v, color, label) {
 }
 
 function hud() {
-  const u = dpr, pad = 14 * u;
-  bar(pad, pad, 180 * u, 16 * u, me.health, me.health <= 34 ? '#e74c3c' : '#2ecc71', `❤ Health ${Math.round(me.health)}%`);
-  bar(pad, pad + 24 * u, 180 * u, 16 * u, me.infection, me.infection >= 60 ? '#e74c3c' : '#c39a2b', `Fever ${Math.round(me.infection)}%`);
-  bar(pad, pad + 48 * u, 180 * u, 10 * u, me.stamina, '#5ec8e5', '');
+  const u = dpr, pad = 14 * u, lx = pad + G.safe.left * u, touch = matchMedia('(pointer: coarse)').matches;
+  bar(lx, pad, 180 * u, 16 * u, me.health, me.health <= 34 ? '#e74c3c' : '#2ecc71', `❤ Health ${Math.round(me.health)}%`);
+  bar(lx, pad + 24 * u, 180 * u, 16 * u, me.infection, me.infection >= 60 ? '#e74c3c' : '#c39a2b', `Fever ${Math.round(me.infection)}%`);
+  bar(lx, pad + 48 * u, 180 * u, 10 * u, me.stamina, '#5ec8e5', '');
   ctx.fillStyle = '#ddd'; ctx.font = `600 ${11 * u}px system-ui`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('Stamina (Shift to sprint)', pad + 186 * u, pad + 53 * u);
-  if (t < me.sprayUntil) ctx.fillText(`Bug spray ${Math.ceil(me.sprayUntil - t)}s`, pad + 186 * u, pad + 32 * u);
+  ctx.fillText(touch ? 'Stamina' : 'Stamina (Shift to sprint)', lx + 186 * u, pad + 53 * u);
+  if (t < me.sprayUntil) ctx.fillText(`Bug spray ${Math.ceil(me.sprayUntil - t)}s`, lx + 186 * u, pad + 32 * u);
   // the weapon and its cooldown ring (bottom right on a computer; phones have the attack button)
   const c = G.CHARS[opts.char], ready = clamp(1 - (me.attackReady - t) / opts.mode.strikeCooldown, 0, 1);
   const wx = W - 60 * u, wy = H - 60 * u, wr = 34 * u;
@@ -1109,7 +1109,7 @@ function hud() {
   ab.textContent = c.icon; ab.style.setProperty('--ready', ready);
   // the torn map: a little picture of the island with a circle where the strip is
   if (me.hasMap) {
-    const mw = 150 * u, mh = mw * MH / MW, mx = W - mw - pad, my = pad + 36 * u;
+    const mw = 150 * u, mh = mw * MH / MW, mx = W - mw - pad - G.safe.right * u, my = pad + 36 * u;
     ctx.fillStyle = 'rgba(233,220,176,0.92)'; ctx.fillRect(mx, my, mw, mh);
     ctx.strokeStyle = '#2b6b8a'; ctx.lineWidth = 3 * u; ctx.beginPath();
     world.riverPts.forEach((q, i) => i ? ctx.lineTo(mx + q.x / MW * mw, my + q.y / MH * mh) : ctx.moveTo(mx + q.x / MW * mw, my + q.y / MH * mh));
