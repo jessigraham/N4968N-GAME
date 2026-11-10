@@ -108,7 +108,7 @@ G.mode = M;
 const $ = s => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const fmt = G.fmt = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-const dpr = Math.min(2, window.devicePixelRatio || 1);
+let dpr = G.Quality.dpr();
 const hasKeyboard = matchMedia('(hover: hover) and (pointer: fine)').matches;
 
 // ---------- State ----------
@@ -426,6 +426,11 @@ Net.onMsg = m => {
   else if (m.t === 'again') { wantAgain.them = true; againMsg = 'Your rival wants a rematch!'; $('#resStatus').textContent = againMsg; maybeRematch(); }
   else if (m.t === 'mode' || (m.t === 'hello' && m.mode)) { if (Net.role === 'guest') { setMode(m.mode, true); updateRival(); } }
   else if (m.t === 'jungle') { if (Net.role === 'guest') startJungle(m.seed); }
+  else if (m.t === 'sync') {
+    if (m.char) oppChar = m.char;
+    if (m.boarded && rivalBoardedAt === null) rivalBoarded(m.boarded.plane, m.boarded.jungle);
+    if (m.flown && opp) { opp.flight = m.flown.r; opp.gateT = m.flown.gateT; }
+  }
   else if (m.t === 'fpos') { G.Flight.rivalPos({ x: m.x, y: m.y, h: m.h }); }
   else if (m.t === 'flown') { if (opp) { opp.flight = m.r; opp.gateT = m.gateT; } G.Flight.rivalPos(null); }
   else if (m.t === 'bitten') { G.Jungle.notice(`${charName(oppChar)} was bitten! They're back at a checkpoint.`); }
@@ -435,12 +440,23 @@ Net.onMsg = m => {
   else if (m.t === 'pick') { oppChar = m.char; updateRival(); }
   else if (m.t === 'ready') { oppChar = m.char || oppChar; ready.them = true; updateRival(); maybeStart(); }
 };
+function raceNotice(text, color) {
+  if (G.Jungle.running) G.Jungle.notice(text, color);
+  else if (me && state === 'race') say(me, text, color, 3);
+}
+Net.onDrop = () => { if (mode === 'online') raceNotice('Your rival\'s connection dropped. Holding their spot…', '#ff9f43'); };
 Net.onOpen = () => {
   Net.send({ t: 'hello', mode: Net.role === 'host' ? modeKey : undefined });
   const screen = $('#menu').dataset.screen;
   if (screen === 'invite' || screen === 'join') {
     setStatus(Net.role === 'host' ? '#inviteStatus' : '#joinStatus', 'Friend connected ✓ Here comes the story…', 'ok');
     clearTimeout(storyT); storyT = setTimeout(() => { if (mode === 'online' && ['invite', 'join'].includes($('#menu').dataset.screen)) startStory(); }, 1400);
+  } else if (state !== 'menu') {
+    // back together mid-race, after one of us reloaded or lost signal
+    oppGone = false;
+    Net.send({ t: 'sync', char: myChar, boarded: myPlaneId ? { plane: myPlaneId, jungle: myJungle } : null, flown: me && me.flight ? { r: me.flight, gateT: me.gateT } : null });
+    raceNotice('Your rival is back.', '#7bed9f');
+    updateRival();
   } else {
     // the friend reloaded and came back while we're still before the race: catch them up
     oppGone = false; ready.them = false;
@@ -449,8 +465,6 @@ Net.onOpen = () => {
     updateRival();
   }
 };
-// only before the race can a friend who reloaded take their seat back
-Net.canReplace = () => state === 'menu';
 let storyT = 0;
 
 // ---------- The beginning: story → researcher → path → airstrip (each player on their own device) ----------
@@ -532,9 +546,10 @@ function rivalBoarded(plane, jungle) {
   G.Jungle.markTaken(plane);
   if (state === 'jungle') G.Jungle.rivalArrived(RACE_TIME + 3);
 }
-let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0;
-function startJungle(seed) {
-  currentSeed = seed;
+let rivalBoardedAt = null, oppPlane = null, botArrives = null, botJungleDeaths = 0, myPlaneId = null;
+function startJungle(seed, resume) {
+  currentSeed = seed; myPlaneId = null;
+  if (mode === 'online') Net.holdSeat = true;   // from here on, a reload or dropped signal doesn't lose the seat
   Net.forget();   // once the race is on, a reload starts fresh
   rivalBoardedAt = null; oppPlane = null;
   myJungle = { time: 0, deaths: 0, kills: 0 }; oppJungle = { time: 0, deaths: 0 }; botArrives = null; botJungleDeaths = 0;
@@ -550,13 +565,13 @@ function startJungle(seed) {
   updateRival();
   RACE_TIME = G.RACE_TIME = M().cockpitClock;
   G.Jungle.start({
-    seed, char: myChar, mode: M(),
+    seed, char: myChar, mode: M(), resume,
     onPos: mode === 'online' ? pos => Net.send({ t: 'pos', ...pos }) : null,
     onBitten: mode === 'online' ? () => Net.send({ t: 'bitten' }) : null,
     bot: mode === 'bot' ? oppChar : null,
     onBotBoard: mode === 'bot' ? (plane, jungle) => rivalBoarded(plane, jungle) : null,
     onBoard: plane => {
-      myJungle = G.Jungle.stats();
+      myJungle = G.Jungle.stats(); myPlaneId = plane.id;
       botArrives = mode === 'bot' && rivalBoardedAt === null ? G.Jungle.botEta() : null;
       if (botArrives !== null) botJungleDeaths = (G.Jungle.botStats() || {}).deaths || 0;
       if (mode === 'online') Net.send({ t: 'boarded', plane: plane.id, jungle: myJungle });
@@ -828,7 +843,7 @@ const FLIGHT_INTRO = 3.8, FLIGHT_DELAY = 1.6;   // seconds of climb-out, and the
 const FLIGHT_PAINT = { c172: '#a8322b', cherokee: '#1f5f9e' };
 function planeLook(p) { const kind = p.planeType === 'cherokee' ? 'cherokee' : 'c172'; return { kind, reg: p.reg, stripe: FLIGHT_PAINT[kind] }; }
 
-function startFlight() {
+function startFlight(resume) {
   if (state === 'menu' || me.flight) return;
   me.flying = true;
   $('#timer .lbl').textContent = 'Storm flight';
@@ -837,7 +852,7 @@ function startFlight() {
     plane: planeLook(me), voice: CHARS[me.char].voice,
     onPos: mode === 'online' ? pos => Net.send({ t: 'fpos', ...pos }) : null,
     onDone: r => flightDone(r),
-    rival: opp ? rivalInFlight() : null,
+    rival: opp ? rivalInFlight() : null, resume,
   });
 }
 function rivalInFlight() {
@@ -1096,6 +1111,7 @@ $('#muteBtn').addEventListener('click', e => { Sfx.setMuted(!Sfx.muted); e.targe
 
 // ---------- Main loop ----------
 function fit(canvas) {
+  dpr = G.Quality.dpr();
   const r = canvas.getBoundingClientRect();
   const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -1143,6 +1159,7 @@ function frame(now) {
   last = now;
   while (total > 0) { const dt = Math.min(0.05, total); step(dt, now); total -= dt; }
   if (mode === 'online' && ['countdown', 'race', 'end'].includes(state) && now - lastSend > 100) { lastSend = now; sendSnapshot(); }
+  if (now - lastSave > 1000) { lastSave = now; saveRace(); }
   draw();
 }
 function draw() {
@@ -1153,7 +1170,8 @@ function draw() {
   const rem = RACE_TIME - raceT;
   $('#time').textContent = G.Flight.running ? fmt(G.Flight.debug().t) : state === 'jungle' ? fmt(Math.max(0, M().jungleClock - G.Jungle.elapsed())) : fmt(state === 'menu' ? M().cockpitClock : rem);
   $('#timer').classList.toggle('danger', state === 'race' && rem < 20 && !G.Flight.running && !me.airborne);
-  if (document.hidden) return;
+  // the cockpits are only drawn when they're actually on screen (not behind the jungle, the storm flight or a menu)
+  if (document.hidden || G.Flight.running || !['countdown', 'race', 'end'].includes(state)) return;
   const racing = state === 'race';
   if (me) {
     const cssScale = Math.min(meCanvas.clientWidth / G.CAMERA.w, meCanvas.clientHeight / G.CAMERA.h);
@@ -1169,12 +1187,71 @@ function draw() {
   }
 }
 function loop(now) {
+  if (G.Quality.tick(now)) fitAll();
   try { frame(now); } catch (e) { console.error(e); }   // never let one bad frame stop the game
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 // Hidden or throttled tabs pause animation frames; keep the race clock and the online link ticking anyway.
 setInterval(() => { const now = performance.now(); if (now - last > 150) frame(now); }, 100);
+
+// ---------- A page reload never ends the race ----------
+// The race is saved in this tab about once a second. Reloading picks up where you were, with the same rival:
+// the jungle at your exact spot, the cockpit at your exact step, the storm flight at your exact position.
+const RACE_KEY = 'n4968n-race', RACE_FRESH = 5 * 60 * 1000;
+let lastSave = 0;
+function cockpitOf(p) {
+  const d = { reg: p.reg, msgLeft: Math.max(0, p.msgDur - (raceT - p.msgT)), lockLeft: Math.max(0, p.lockUntil - raceT), floodLeft: Math.max(0, p.floodUntil - raceT), gateT: p.gateT, flight: p.flight };
+  for (const k of SNAP) d[k] = p[k];
+  return d;
+}
+function loadCockpit(p, d) {
+  for (const k of SNAP) if (k in d) p[k] = d[k];
+  p.reg = d.reg; p.msgT = raceT; p.msgDur = d.msgLeft; p.lockUntil = raceT + d.lockLeft; p.floodUntil = raceT + d.floodLeft; p.gateT = d.gateT; p.flight = d.flight;
+}
+function saveRace() {
+  const stage = G.Flight.running ? 'flight' : state === 'jungle' && G.Jungle.running ? 'jungle' : ['countdown', 'race'].includes(state) ? 'race' : null;
+  try {
+    if (!stage) { sessionStorage.removeItem(RACE_KEY); return; }
+    const r = { stage, state, at: Date.now(), mode, modeKey, char: myChar, oppChar, seed: currentSeed, role: Net.role, code: Net.code, myJungle, oppJungle, oppPlane, botArrives, botJungleDeaths, myPlaneId,
+      rivalAgo: rivalBoardedAt === null ? null : (performance.now() - rivalBoardedAt) / 1000, raceT, oppGone };
+    if (stage === 'jungle') r.jungle = G.Jungle.snapshot();
+    else { r.me = cockpitOf(me); r.planeKind = me.planeType === 'cherokee' ? 'cherokee' : 'c172'; r.opp = opp && mode === 'bot' ? cockpitOf(opp) : null; }
+    if (stage === 'flight') r.flight = G.Flight.snapshot();
+    sessionStorage.setItem(RACE_KEY, JSON.stringify(r));
+  } catch (e) {}
+}
+addEventListener('pagehide', saveRace);
+function savedRace() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(RACE_KEY));
+    return r && Date.now() - r.at < RACE_FRESH ? r : null;
+  } catch (e) { return null; }
+}
+function resumeRace(r) {
+  mode = r.mode; setMode(r.modeKey, true); pickChar(r.char); oppChar = r.oppChar; currentSeed = r.seed;
+  const away = (Date.now() - r.at) / 1000;
+  if (mode === 'online') {
+    if (!r.code || r.oppGone) mode = 'solo';   // the rival had already left
+    else { Net.holdSeat = true; if (r.role === 'host') Net.host(r.code); else Net.join(r.code); Net.forget(); }
+  }
+  // browsers only allow sound after a click or key press, so it comes back with the first one
+  const wake = () => { Sfx.init(); if (me && !me.voice && ['race', 'countdown'].includes(state)) { me.voice = new G.EngineVoice(0, 1); if (opp) opp.voice = new G.EngineVoice(0.6, 0.25); } removeEventListener('pointerdown', wake, true); removeEventListener('keydown', wake, true); };
+  addEventListener('pointerdown', wake, true); addEventListener('keydown', wake, true);
+  const rejoin = () => { rivalBoardedAt = r.rivalAgo === null ? null : performance.now() - (r.rivalAgo + away) * 1000; oppPlane = r.oppPlane; oppJungle = r.oppJungle; myJungle = r.myJungle; botArrives = r.botArrives; botJungleDeaths = r.botJungleDeaths; myPlaneId = r.myPlaneId; };
+  if (r.stage === 'jungle') { startJungle(r.seed, r.jungle); rejoin(); return; }
+  rejoin();
+  beginRace({ plane: { reg: r.me.reg, kind: r.planeKind }, offset: Math.max(0.01, r.raceT) });
+  raceT = r.raceT; state = r.state === 'countdown' ? 'race' : r.state;
+  loadCockpit(me, r.me);
+  if (opp && r.opp) loadCockpit(opp, r.opp);
+  me.msg = ''; say(me, 'Back in the race.', '#7bed9f', 2.5);
+  if (r.stage === 'flight') {
+    me.flightQueued = true;
+    if (mode === 'bot' && opp && opp.airborne && !opp.flight && opp.finishT) planBotFlight();
+    startFlight(r.flight);
+  }
+}
 
 // ---------- Start up ----------
 me = newPlayer(0);
@@ -1185,8 +1262,9 @@ document.querySelectorAll('#charPick button').forEach(b => b.addEventListener('c
 pickChar(myChar);
 fitAll();
 const joinParam = new URLSearchParams(location.search).get('join');
-const saved = Net.remembered();
-if (saved.host && !joinParam) {
+const saved = Net.remembered(), racing = savedRace();
+if (racing) document.addEventListener('DOMContentLoaded', () => resumeRace(racing));   // once the story and ending scripts have loaded too
+else if (saved.host && !joinParam) {
   // the host reloaded the invite screen: keep the same code so the friend's link still works
   mode = 'online'; showScreen('invite'); Net.host(saved.host);
 } else if (joinParam) {
@@ -1199,5 +1277,5 @@ if (saved.host && !joinParam) {
 } else showScreen(new URLSearchParams(location.search).has('map') ? 'home' : 'main');   // a shared map link goes straight to the race
 
 // Handy for testing from the browser console.
-window.N4968N = { get me() { return me; }, get opp() { return opp; }, get state() { return state; }, get raceT() { return raceT; }, keyDown, keyUp };
+window.N4968N = { get me() { return me; }, get opp() { return opp; }, get state() { return state; }, get raceT() { return raceT; }, keyDown, keyUp, startJungle, beginRace, get mode() { return mode; }, set mode(m) { mode = m; } };
 })();

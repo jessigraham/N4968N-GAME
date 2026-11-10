@@ -10,7 +10,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 // ---------- Tuning ----------
 const MW = 3600, MH = 2800, CELL = 40, GW = MW / CELL, GH = MH / CELL;
-const SPEED = 230, SPRINT = 1.65, BRUSH_SLOW = 0.55;
+const SPEED = 230, SPRINT = 1.65, BRUSH_SLOW = 0.72, PLAYER_R = 12;
 const T = { BRUSH: 0, TRAIL: 1, WATER: 2, BRIDGE: 3, CLEAR: 4, STRIP: 5 };
 
 function rng(seed) {   // small seeded random generator (mulberry32)
@@ -234,7 +234,7 @@ function tryIsland(seed, cfg, lenient) {
 // ---------- The run ----------
 const canvas = document.getElementById('jungleCanvas');
 const ctx = canvas.getContext('2d');
-const dpr = Math.min(2, window.devicePixelRatio || 1);
+let dpr = G.Quality.dpr();
 let W = 0, H = 0, running = false, world = null, opts = null, last = 0, t = 0;
 let me = null, ghost = null, keys = {}, joy = { x: 0, y: 0, on: false }, sprintBtn = false, msg = { text: '', until: 0, color: '#fff' };
 let prompt = null, dust = [], taken = {}, deadline = null, smokeShown = false, windShown = false;
@@ -251,6 +251,48 @@ function blocked(x, y, r) {
   }
   for (const p of world.planes) { if (Math.hypot(p.x - x, p.y - y) > 420) continue; for (const c of (p.solid || (p.solid = G.Planes.solid(p)))) if (Math.hypot(c.x - x, c.y - y) < c.r + r) return true; }
   return false;
+}
+
+// Walk a short distance, sliding along whatever's in the way instead of stopping dead against it.
+function walk(dx, dy) {
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.01) return;
+  const n = Math.ceil(dist / 5), sx = dx / n, sy = dy / n;
+  for (let i = 0; i < n; i++) if (!stepAround(sx, sy)) break;
+}
+function stepAround(sx, sy) {
+  const go = (x, y) => { if (blocked(me.x + x, me.y + y, PLAYER_R)) return false; me.x += x; me.y += y; return true; };
+  if (go(sx, sy)) return true;
+  // curve around it, trying the side that worked last so you glide along a riverbank instead of jittering
+  const side = me.slideSide || 1;
+  for (const a of [0.5, 0.9, 1.3, Math.PI / 2]) for (const s of [side, -side]) {
+    const c = Math.cos(a * s), n = Math.sin(a * s), k = Math.max(0.4, c);
+    if (go((sx * c - sy * n) * k, (sx * n + sy * c) * k)) { me.slideSide = s; return true; }
+  }
+  return false;
+}
+// The safety net: if you're wedged somewhere and pushing without getting anywhere, you scramble out to open ground.
+function clearLine(ax, ay, bx, by) {   // no river between two points
+  const d = Math.hypot(bx - ax, by - ay), n = Math.ceil(d / 15);
+  for (let i = 1; i <= n; i++) if (world.at(Math.floor((ax + (bx - ax) * i / n) / CELL), Math.floor((ay + (by - ay) * i / n) / CELL)) === T.WATER) return false;
+  return true;
+}
+function scramble() {
+  const open = [T.TRAIL, T.CLEAR, T.BRIDGE, T.STRIP];
+  for (const trailOnly of [true, false]) for (let r = 20; r <= 500; r += 20) for (let k = 0; k < 24; k++) {
+    const x = me.x + Math.cos(k / 24 * TAU) * r, y = me.y + Math.sin(k / 24 * TAU) * r;
+    if (blocked(x, y, PLAYER_R + 3) || (trailOnly && !open.includes(world.at(Math.floor(x / CELL), Math.floor(y / CELL))))) continue;
+    if (!clearLine(me.x, me.y, x, y)) continue;
+    me.x = x; me.y = y; me.svx = me.svy = me.kx = me.ky = 0;
+    say('You scramble free.', '#ffd970', 1.4);
+    return true;
+  }
+  return false;
+}
+function unstick(pushing, dt) {
+  if (!pushing || Math.hypot(me.x - (me.anchorX ?? me.x), me.y - (me.anchorY ?? me.y)) > 30) { me.anchorX = me.x; me.anchorY = me.y; me.stuckT = 0; }
+  else me.stuckT = (me.stuckT || 0) + dt;
+  if (blocked(me.x, me.y, PLAYER_R) || me.stuckT > 1.1) { me.stuckT = 0; me.anchorX = me.x; me.anchorY = me.y; if (blocked(me.x, me.y, PLAYER_R) || pushing) scramble(); }
 }
 
 function update(dt) {
@@ -278,8 +320,8 @@ function update(dt) {
   let vx = me.svx, vy = me.svy;
   // knocked back by a zombie
   vx += me.kx; vy += me.ky; me.kx *= Math.pow(0.02, dt); me.ky *= Math.pow(0.02, dt);
-  if (!blocked(me.x + vx * dt, me.y, 14)) me.x += vx * dt;
-  if (!blocked(me.x, me.y + vy * dt, 14)) me.y += vy * dt;
+  walk(vx * dt, vy * dt);
+  unstick(moving, dt);
   if (Math.abs(ix) > 0.1 && moving) me.face = ix < 0 ? -1 : 1;
   if (moving) { me.dirx = ix; me.diry = iy; const m2 = Math.hypot(ix, iy) || 1; me.dirx /= m2; me.diry /= m2; }
   me.moving = moving; me.sprinting = sprinting;
@@ -739,22 +781,63 @@ function buildMasks() {
   };
   maskWorld = world;
 }
-// lay one textured surface through its mask (the main canvas is in world space when this is called)
-function surface(name, mask, zoom, camX, camY) {
-  const c = bctx;
-  if (buf.width !== W || buf.height !== H) { buf.width = W; buf.height = H; }
-  const p = pattern(name, c);
-  if (!p) return;
-  c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, W, H);
-  c.setTransform(zoom, 0, 0, zoom, -camX * zoom, -camY * zoom);
-  c.fillStyle = p; c.fillRect(camX, camY, W / zoom, H / zoom);
-  c.globalCompositeOperation = 'destination-in';
-  c.drawImage(mask, 0, 0, MW, MH);
-  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(buf, 0, 0); ctx.restore();
+// The ground never changes during a run, so it's painted once into tiles as you come near them, and each frame just
+// lays down the handful of tiles on screen. That's far less work than compositing the whole floor every frame.
+const TILE = 400, TILE_PAD = 2, TILE_KEEP = 48;
+let tiles = new Map(), tileWorld = null, tileScale = 1, tileClock = 0;
+function groundReady() { return ['floor', 'clear', 'trail', 'water', 'strip', 'bridge'].every(n => pattern(n)) && ready(sprite('bush')); }
+function bakeTile(tx, ty) {
+  const size = TILE + TILE_PAD * 2, wx = tx * TILE - TILE_PAD, wy = ty * TILE - TILE_PAD, px = Math.ceil(size * tileScale);
+  const cv = document.createElement('canvas'); cv.width = cv.height = px;
+  const c = cv.getContext('2d'), toWorld = g => g.setTransform(tileScale, 0, 0, tileScale, -wx * tileScale, -wy * tileScale);
+  toWorld(c); c.fillStyle = pattern('floor', bctx); c.fillRect(wx, wy, size, size);
+  if (buf.width !== px || buf.height !== px) { buf.width = px; buf.height = px; }
+  const lay = (name, mask) => {
+    bctx.setTransform(1, 0, 0, 1, 0, 0); bctx.globalCompositeOperation = 'source-over'; bctx.clearRect(0, 0, px, px);
+    toWorld(bctx); bctx.fillStyle = pattern(name, bctx); bctx.fillRect(wx, wy, size, size);
+    bctx.globalCompositeOperation = 'destination-in'; bctx.drawImage(mask, 0, 0, MW, MH);
+    c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(buf, 0, 0); toWorld(c);
+  };
+  lay('clear', masks.clear);
+  c.globalAlpha = 0.45; c.drawImage(masks.rim, 0, 0, MW, MH); c.globalAlpha = 1;
+  lay('trail', masks.trail);
+  lay('water', masks.water);
+  const x0 = Math.max(0, Math.floor(wx / CELL)), y0 = Math.max(0, Math.floor(wy / CELL)), x1 = Math.min(GW - 1, Math.ceil((wx + size) / CELL)), y1 = Math.min(GH - 1, Math.ceil((wy + size) / CELL));
+  c.fillStyle = pattern('bridge', bctx);
+  for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) if (world.grid[cy * GW + cx] === T.BRIDGE) c.fillRect(cx * CELL - 2, cy * CELL, CELL + 4, CELL);
+  // the runway: a straight band of packed red dirt with a centre line of stones
+  const st = world.strip;
+  c.save(); c.translate(st.cx, st.cy); c.rotate(st.ang); c.fillStyle = pattern('strip', bctx); c.fillRect(-st.w / 2, -st.h / 2 + 20, st.w, st.h - 40);
+  c.fillStyle = '#e8e2d0'; for (let x = -st.w / 2 + 30; x < st.w / 2 - 30; x += 60) c.fillRect(x, -3, 26, 6);
+  c.restore();
+  const bi = sprite('bush');
+  for (const b of world.bushes) {
+    if (b.x < wx - 40 || b.x > wx + size + 40 || b.y < wy - 40 || b.y > wy + size + 40) continue;
+    c.save(); c.translate(b.x, b.y); c.rotate(b.hue * 6.28); c.drawImage(bi, -b.r * 1.25, -b.r * 1.25, b.r * 2.5, b.r * 2.5); c.restore();
+  }
+  return { cv, used: 0 };
+}
+function drawGround(zoom, camX, camY) {
+  if (tileWorld !== world) { tiles = new Map(); tileWorld = world; tileScale = clamp(zoom, 0.75, 1.5); if (maskWorld !== world) buildMasks(); }
+  tileClock++;
+  const tx0 = Math.max(0, Math.floor(camX / TILE)), ty0 = Math.max(0, Math.floor(camY / TILE));
+  const tx1 = Math.min(Math.floor((MW - 1) / TILE), Math.floor((camX + W / zoom) / TILE)), ty1 = Math.min(Math.floor((MH - 1) / TILE), Math.floor((camY + H / zoom) / TILE));
+  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    const key = tx + ',' + ty;
+    let tile = tiles.get(key);
+    if (!tile) { tile = bakeTile(tx, ty); tiles.set(key, tile); }
+    tile.used = tileClock;
+    ctx.drawImage(tile.cv, tx * TILE - TILE_PAD, ty * TILE - TILE_PAD, TILE + TILE_PAD * 2, TILE + TILE_PAD * 2);
+  }
+  if (tiles.size > TILE_KEEP) {   // forget the ones furthest behind you
+    const old = [...tiles].sort((a, b) => a[1].used - b[1].used).slice(0, tiles.size - TILE_KEEP);
+    old.forEach(([k]) => tiles.delete(k));
+  }
 }
 Object.keys(TEX).forEach(tex); ['tree1', 'tree2', 'tree3', 'palm1', 'palm2', 'bush'].forEach(sprite);
 function draw() {
   const r = canvas.getBoundingClientRect();
+  dpr = G.Quality.dpr();
   W = Math.max(1, Math.round(r.width * dpr)); H = Math.max(1, Math.round(r.height * dpr));
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const zoom = clamp(Math.min(r.width, r.height) / 620, 0.62, 1.25) * dpr;
@@ -766,22 +849,12 @@ function draw() {
   const x1 = Math.min(GW - 1, Math.ceil((camX + W / zoom) / CELL) + 1), y1 = Math.min(GH - 1, Math.ceil((camY + H / zoom) / CELL) + 1);
 
   // ground: photoreal textures when they've loaded, flat colours until then
-  const floorP = pattern('floor');
-  if (floorP) {
-    ctx.fillStyle = floorP; ctx.fillRect(x0 * CELL, y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL);
-    if (maskWorld !== world) buildMasks();
-    surface('clear', masks.clear, zoom, camX, camY);
-    ctx.globalAlpha = 0.45; ctx.drawImage(masks.rim, 0, 0, MW, MH); ctx.globalAlpha = 1;
-    surface('trail', masks.trail, zoom, camX, camY);
-    surface('water', masks.water, zoom, camX, camY);
+  const baked = groundReady();
+  if (baked) {
+    drawGround(zoom, camX, camY);
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
-      const tile = world.grid[cy * GW + cx];
-      if (tile === T.WATER) { ctx.fillStyle = `rgba(200,170,230,${0.05 + 0.05 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
-      else if (tile === T.BRIDGE && pattern('bridge')) { ctx.fillStyle = pattern('bridge'); ctx.fillRect(cx * CELL - 2, cy * CELL, CELL + 4, CELL); }
+      if (world.grid[cy * GW + cx] === T.WATER) { ctx.fillStyle = `rgba(200,170,230,${0.05 + 0.05 * Math.sin(t * 2 + cx * 0.7 + cy)})`; ctx.fillRect(cx * CELL + 4, cy * CELL + 18, 22, 2); }
     }
-    // the runway itself: a straight band of packed red dirt
-    const sp = pattern('strip'), st = world.strip;
-    if (sp) { ctx.save(); ctx.translate(st.cx, st.cy); ctx.rotate(st.ang); ctx.fillStyle = sp; ctx.fillRect(-st.w / 2, -st.h / 2 + 20, st.w, st.h - 40); ctx.restore(); }
   } else {
     for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) {
       const tile = world.grid[cy * GW + cx];
@@ -791,20 +864,20 @@ function draw() {
   }
   // the airstrip: dirt runway with a centre line of stones
   const s = world.strip;
-  ctx.save(); ctx.translate(s.cx, s.cy); ctx.rotate(s.ang); ctx.fillStyle = '#e8e2d0';
-  for (let x = -s.w / 2 + 30; x < s.w / 2 - 30; x += 60) ctx.fillRect(x, -3, 26, 6);
-  ctx.restore();
+  if (!baked) {
+    ctx.save(); ctx.translate(s.cx, s.cy); ctx.rotate(s.ang); ctx.fillStyle = '#e8e2d0';
+    for (let x = -s.w / 2 + 30; x < s.w / 2 - 30; x += 60) ctx.fillRect(x, -3, 26, 6);
+    ctx.restore();
+  }
   // a fire barrel by the planes (the smoke clue)
   const { x: fx, y: fy } = s.toWorld(s.w / 2 - 60, s.h / 2 + 40);
   ctx.fillStyle = '#3a3a3a'; ctx.beginPath(); ctx.arc(fx, fy, 12, 0, TAU); ctx.fill();
   ctx.fillStyle = `rgba(255,${140 + Math.random() * 60},40,0.9)`; ctx.beginPath(); ctx.arc(fx, fy, 7 + Math.random() * 3, 0, TAU); ctx.fill();
 
   // bushes, items, signs
-  for (const b of world.bushes) {
+  if (!baked) for (const b of world.bushes) {
     if (b.x < camX - 40 || b.x > camX + W / zoom + 40 || b.y < camY - 40 || b.y > camY + H / zoom + 40) continue;
-    const bi = sprite('bush');
-    if (ready(bi)) { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.hue * 6.28); ctx.drawImage(bi, -b.r * 1.25, -b.r * 1.25, b.r * 2.5, b.r * 2.5); ctx.restore(); }
-    else { ctx.fillStyle = b.hue < 0.5 ? '#264a2a' : '#2d5530'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill(); }
+    ctx.fillStyle = b.hue < 0.5 ? '#264a2a' : '#2d5530'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
   }
   for (const it of world.items) {
     if (it.got) continue;
@@ -857,7 +930,7 @@ function draw() {
     }
   } });
   for (const c of world.checkpoints) if (inView(c.x, c.y, 80)) stand.push({ y: c.y, f: () => drawLantern(c) });
-  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawWalker(ghostAnim, ghost.char, ghostAnim.x, ghostAnim.y, 0.8, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(bot ? G.CHARS[ghost.char].short.toUpperCase() : 'RIVAL', ghost.x, ghost.y - 86); } });
+  if (ghost && inView(ghost.x, ghost.y, 80)) stand.push({ y: ghost.y, f: () => { drawWalker(ghostAnim, ghost.char, ghostAnim.x, ghostAnim.y, 0.8, false); ctx.fillStyle = '#5ec8e5'; ctx.font = '700 13px system-ui'; ctx.textAlign = 'center'; ctx.fillText(bot ? G.CHARS[ghost.char].short.toUpperCase() : 'RIVAL', ghostAnim.x, ghostAnim.y - 86); } });
   stand.push({ y: me.y, f: () => drawWalker(meAnim, opts.char, me.x, me.y, 1, t - me.hit < 0.3) });
   stand.sort((a, b) => a.y - b.y).forEach(o => o.f());
   // Clear Skies only: a soft arrow over the planes that can still fly
@@ -892,7 +965,7 @@ function draw() {
   for (let k = 0; k < 4; k++) { ctx.fillStyle = k % 2 ? '#fff' : '#ff7a1a'; ctx.fillRect(k * 12, -7 + k, 12, 14 - k * 2); }
   ctx.restore();
   // smoke from the fire barrel
-  for (let k = 0; k < 14; k++) {
+  if (inView(fx, fy - 130, 320)) for (let k = 0; k < 14; k++) {
     const q = (t * 0.25 + k / 14) % 1;
     ctx.fillStyle = `rgba(190,190,200,${0.35 * (1 - q)})`;
     ctx.beginPath(); ctx.arc(fx + q * 120 + Math.sin(q * 6 + k) * 14, fy - q * 260, 10 + q * 40, 0, TAU); ctx.fill();
@@ -900,20 +973,21 @@ function draw() {
 
   // dusk light, fever blur and edge clues (screen space)
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#c4aec8'; ctx.fillRect(0, 0, W, H);   // the same purple dusk as base camp
-  ctx.globalCompositeOperation = 'source-over';
+  if (G.Quality.bare) { ctx.fillStyle = 'rgba(70,40,85,0.26)'; ctx.fillRect(0, 0, W, H); }   // a cheaper dusk for slow computers
+  else { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#c4aec8'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over'; }   // the same purple dusk as base camp
   const v = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.max(W, H) * 0.7);
   v.addColorStop(0, 'rgba(40,10,40,0.05)'); v.addColorStop(1, 'rgba(10,0,15,0.7)');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
-  G.Scene.overlay(ctx, W, H, 0);   // the same film grain as the title and cockpit
-  canvas.style.filter = me.infection >= 60 ? `blur(${((me.infection - 60) / 40 * 2.2 + 0.6).toFixed(1)}px) saturate(0.7)` : '';
+  if (!G.Quality.lite) G.Scene.overlay(ctx, W, H, 0);   // the same film grain as the title and cockpit
+  let look = me.infection >= 60 ? (G.Quality.lite ? 'saturate(0.7)' : `blur(${((me.infection - 60) / 40 * 2.2 + 0.6).toFixed(1)}px) saturate(0.7)`) : '';
   if (t < me.outUntil) { ctx.fillStyle = `rgba(0,0,0,${0.85})`; ctx.fillRect(0, 0, W, H); }
   if (t - me.flashAt < 0.35) { ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - (t - me.flashAt) / 0.35)})`; ctx.fillRect(0, 0, W, H); }
   if (t < me.deadUntil) {
     const k = 1 - (me.deadUntil - t) / 2.6;
-    canvas.style.filter = `grayscale(${Math.min(1, k * 2)})`;
+    look = `grayscale(${Math.min(1, k * 2)})`;
     ctx.fillStyle = `rgba(120,0,0,${0.35 + k * 0.4})`; ctx.fillRect(0, 0, W, H);
   }
+  if (look !== canvasLook) { canvasLook = look; canvas.style.filter = look; }
   edgeClue(camX, camY, zoom, s.cx, s.cy, smokeShown || me.hasMap, 'smoke');
   hud();
 }
@@ -1069,26 +1143,33 @@ function banner(text, y, color) {
 }
 
 // ---------- Loop and input ----------
-let looping = false;
+let looping = false, canvasLook = '';
 // the rival glides between position updates (online ones arrive about 10 times a second), then walks like you do
 let ghostShow = null;
 function animateGhost(dt) {
   if (!ghost) { ghostShow = null; return; }
   if (!ghostShow || ghostShow.char !== ghost.char || Math.hypot(ghost.x - ghostShow.x, ghost.y - ghostShow.y) > 300) ghostShow = { x: ghost.x, y: ghost.y, char: ghost.char };
-  const k = 1 - Math.exp(-dt * (bot ? 30 : 9));
-  ghostShow.x += (ghost.x - ghostShow.x) * k; ghostShow.y += (ghost.y - ghostShow.y) * k;
+  // an online rival is carried on along their last heading for a moment, so they keep moving between updates
+  const ahead = bot ? 0 : Math.min(0.14, (performance.now() - (ghost.at || 0)) / 1000), k = 1 - Math.exp(-dt * (bot ? 30 : 11));
+  ghostShow.x += (ghost.x + (ghost.vx || 0) * ahead - ghostShow.x) * k; ghostShow.y += (ghost.y + (ghost.vy || 0) * ahead - ghostShow.y) * k;
   stride(ghostAnim, ghostShow.x, ghostShow.y, dt);
+}
+// Always run on real time, in small steps: a slow computer draws fewer frames, but nobody moves slower because of it.
+function advance(seconds) {
+  let left = Math.min(0.5, seconds);
+  while (left > 1e-4 && running) { const d = Math.min(1 / 30, left); update(d); if (running) animateGhost(d); left -= d; }
 }
 function frame(now) {
   if (!running) { looping = false; return; }
-  const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-  update(dt); animateGhost(dt); draw();
+  const elapsed = (now - last) / 1000 || 0; last = now;
+  advance(elapsed);
+  if (running) draw();
   requestAnimationFrame(frame);
 }
 setInterval(() => {   // keep going if animation frames are paused (background tab)
   if (!running) return;
   const now = performance.now();
-  if (now - last > 200) { let left = Math.min(1, (now - last) / 1000); last = now; while (left > 0) { const d = Math.min(0.05, left); update(d); left -= d; } draw(); }
+  if (now - last > 200) { const elapsed = (now - last) / 1000; last = now; advance(elapsed); if (running) draw(); }
 }, 120);
 
 const MOVE_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight']);
@@ -1147,9 +1228,22 @@ function briefing(show) {
   clearTimeout(briefTimer); briefTimer = setTimeout(() => briefing(false), 12000);
 }
 
+function restore(r) {
+  Object.assign(me, r.me); t = r.t; taken = r.taken || {};
+  (r.lit || []).forEach((lit, i) => { if (world.checkpoints[i]) world.checkpoints[i].lit = lit; });
+  me.checkpoint = world.checkpoints[r.cp] || null;
+  if (r.items) world.items = r.items;
+  if (r.zombies) world.zombies = r.zombies;
+  deadline = r.deadlineLeft === null || r.deadlineLeft === undefined ? null : t + r.deadlineLeft;
+  smokeShown = !!r.smokeShown; windShown = !!r.windShown;
+  if (r.bot && bot) { Object.assign(bot, r.bot); bot.cp = world.checkpoints[r.bot.cp] || null; }
+  me.svx = me.svy = me.kx = me.ky = 0;
+  say('Back in the race.', '#7bed9f', 2.5);
+}
+
 function showUI(on) {
   document.getElementById('jungle').classList.toggle('hidden', !on);
-  canvas.style.filter = '';
+  canvas.style.filter = ''; canvasLook = '';
 }
 
 G.Jungle = {
@@ -1165,13 +1259,24 @@ G.Jungle = {
     bot = o.bot ? { char: o.bot, x: world.start.x + 30, y: world.start.y + 10, i: 0, health: 100, deaths: 0, deadUntil: 0, face: 1, cp: null, boarded: false } : null; deadline = null; smokeShown = false; windShown = false; dust = []; keys = {}; t = 0;
     showUI(true);
     ensureSounds();
-    say('Find the hidden airstrip. Follow the trails, watch for signs.', '#ffd970', 4);
-    briefing(true);
+    if (o.resume) restore(o.resume);
+    else { say('Find the hidden airstrip. Follow the trails, watch for signs.', '#ffd970', 4); briefing(true); }
     running = true; last = performance.now();
     if (!looping) { looping = true; requestAnimationFrame(frame); }
   },
   stop() { running = false; stopSounds(); showUI(false); briefing(false); },
-  setGhost(g) { ghost = g; },
+  setGhost(g) {
+    const now = performance.now();
+    if (ghost && now - ghost.at < 1000) { const d = Math.max(0.05, (now - ghost.at) / 1000); g.vx = clamp((g.x - ghost.x) / d, -480, 480); g.vy = clamp((g.y - ghost.y) / d, -480, 480); }
+    g.at = now; ghost = g;
+  },
+  // everything needed to pick the run back up after a page reload
+  snapshot() {
+    if (!running || !me) return null;
+    const { checkpoint, ...m } = me;
+    return { me: m, cp: world.checkpoints.indexOf(checkpoint), lit: world.checkpoints.map(c => !!c.lit), t, taken, items: world.items, zombies: world.zombies,
+      deadlineLeft: deadline === null ? null : deadline - t, smokeShown, windShown, bot: bot ? { ...bot, cp: bot.cp ? world.checkpoints.indexOf(bot.cp) : -1 } : null };
+  },
   markTaken(id) { taken[id] = true; },
   rivalArrived(secondsLeft) { deadline = t + secondsLeft; },
   notice(text, color) { if (running) say(text, color || '#5ec8e5', 2.5); },
@@ -1181,7 +1286,7 @@ G.Jungle = {
   stats() { return { time: t, deaths: (me && me.deaths) || 0, kills: (me && me.kills) || 0 }; },
   get running() { return running; },
   // for testing: where things are
-  debug() { return { anim: meAnim, ghostAnim, world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
+  debug() { return { blocked, scramble, anim: meAnim, ghostAnim, world, me, strip: world.strip, stripKey: world.stripKey, planes: world.planes, N: world.N, items: world.items, route: world.routePts, zombies: world.zombies }; },
   generate,
 };
 })();

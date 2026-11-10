@@ -28,6 +28,10 @@ The game opens on the title screen. From there:
 
 On a phone, turn it sideways.
 
+**If something goes wrong mid-race, just refresh.** Reloading the page doesn't kick your rival out or end the race. You come back at the same spot in the jungle, the same step of the checklist, or the same place in the storm, and your rival waits up to 45 seconds for you. Only the **Quit** button ends it for both of you.
+
+**Slow computer?** The game runs on real time, so everyone moves at the same speed however fast their computer is. If a machine can't keep up, the game quietly lowers its drawing quality to stay smooth.
+
 ### The escape
 
 When you lift off, the view pulls back over the island as your plane climbs past the volcano and the horde shrinks on the strip below. Then the winner's card slides in with their picture, their time, their mistakes and lives lost, and their line in their own voice:
@@ -144,6 +148,7 @@ Then visit http://localhost:8765 in your browser.
 - `assets/voice/` holds the recorded character lines (a female and a male voice).
 - `sound.js` makes the engine, starter, stall horn, bangs and groans with the browser's built-in audio.
 - `net.js` connects the two devices with [PeerJS](https://peerjs.com/), which is free and open source. Its free public server only helps the two browsers find each other. The race itself goes directly between the devices.
+- `quality.js` watches the frame rate and lowers drawing quality on computers that can't keep up.
 - `game.js` holds the checklist rules, the race and the menus. Settings like the 90-second timer are at the top of the file.
 
 ## What's next

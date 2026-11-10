@@ -224,6 +224,26 @@ function photoTrees(ctx, p, t, hy, camH, sx, proj, L, R) {
   return true;
 }
 
+// The ground and treeline are hundreds of thin slices, but they only change while the plane rolls. So they're painted
+// once into a picture for each cockpit and reused until the plane moves, instead of being redrawn every frame.
+const outsides = new WeakMap();
+function photoOutside(ctx, p, t, hy, camH, cx, W, sx, proj, L, R) {
+  const TOP = -300, BOTTOM = WIN + 60, vw = R - L, vh = BOTTOM - TOP;
+  const scale = Math.min(1.25, Math.max(0.35, ctx.canvas.width / vw)) * (G.Quality.lite ? 0.8 : 1);
+  let o = outsides.get(p);
+  if (!o) { o = { cv: document.createElement('canvas'), key: '' }; outsides.set(p, o); }
+  const key = [p.dist.toFixed(3), hy.toFixed(1), camH.toFixed(1), L, R, scale].join();
+  if (o.key !== key) {
+    const g = o.cv.getContext('2d'), pw = Math.ceil(vw * scale), ph = Math.ceil(vh * scale);
+    if (o.cv.width !== pw || o.cv.height !== ph) { o.cv.width = pw; o.cv.height = ph; }
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, pw, ph);
+    g.setTransform(scale, 0, 0, scale, -L * scale, -TOP * scale);
+    if (!photoGround(g, p, hy, camH, cx, W, L, R, BOTTOM) || !photoTrees(g, p, t, hy, camH, sx, proj, L, R)) return;
+    o.key = key;
+  }
+  ctx.drawImage(o.cv, L, TOP, vw, vh);
+}
+
 // ---------- the view out the windshield ----------
 function world(ctx, p, t, L, R) {
   const W = VW, winH = WIN, cx = 800;
@@ -245,8 +265,7 @@ function world(ctx, p, t, L, R) {
     ctx.fillStyle = grad; ctx.fillRect(L, -900, R - L, hy + 910);
     const sw = 760, sh = sw * sky.naturalHeight / sky.naturalWidth;
     ctx.drawImage(sky, cx - sw / 2, hy + 14 - sh, sw, sh);
-    photoGround(ctx, p, hy, camH, cx, W, L, R, WIN + 60);
-    photoTrees(ctx, p, t, hy, camH, sx, proj, L, R);
+    photoOutside(ctx, p, t, hy, camH, cx, W, sx, proj, L, R);
   } else {
     const SH = 640, top = hy - 0.62 * SH;
     const SW = Math.max((cx - L) / 0.245, (R - cx) / 0.755) + 40, left = cx - 0.245 * SW;

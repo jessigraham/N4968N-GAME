@@ -8,13 +8,14 @@
 const G = window.G = window.G || {};
 const PREFIX = 'n4968n-race-';
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no look-alikes like O/0 or I/1
-const TIMEOUT = 15000, HELLO_EVERY = 1000, PING_EVERY = 1500, DEAD_AFTER = 6000;
+const TIMEOUT = 15000, HELLO_EVERY = 1000, PING_EVERY = 1500, DEAD_AFTER = 6000, GRACE = 45000;   // a player who drops mid-race has 45 seconds to come back
 const store = { get(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } },
   set(k, v) { try { if (v == null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) {} } };
 
 const Net = G.Net = {
   peer: null, conn: null, role: null, lastRole: null, code: null, linked: false,
-  canReplace: () => true,   // the game says whether a reloaded guest may take over the old seat
+  holdSeat: false, seat: null,   // during a race the seat is kept for the same player, even through a page reload
+  onDrop: () => {},
   onStatus: () => {}, onOpen: () => {}, onMsg: () => {}, onClose: () => {},
   timers: [], lastSeen: 0, deadline: 0,
 
@@ -35,6 +36,12 @@ const Net = G.Net = {
     this.tmo = setTimeout(() => { if (!this.linked && this.role) this.status('timeout', text); }, TIMEOUT);
   },
 
+  // the rival dropped mid-race: keep their seat for a while before telling the game they've gone
+  startGrace() {
+    clearTimeout(this.graceT);
+    this.graceT = setTimeout(() => { if (!this.linked && this.holdSeat) { this.holdSeat = false; this.onClose(); } }, GRACE);
+  },
+
   host(code) {
     this.leave();
     if (!this.available()) { this.status('error', 'Online play needs an internet connection (the PeerJS script did not load).'); return; }
@@ -42,6 +49,9 @@ const Net = G.Net = {
     const keep = !!code;
     this.code = (code || this.makeCode()).toUpperCase();
     store.set('n4968n-host', this.code); store.set('n4968n-join', null);
+    this.seat = keep ? store.get('n4968n-seat') : null;
+    if (!keep) store.set('n4968n-seat', null);
+    if (this.holdSeat) this.startGrace();
     this.status('connecting', 'Setting up your race…');
     this.armTimeout('Could not reach the matchmaking server. Check your internet, then press Try again (same code).');
     this.hostPeer(keep);
@@ -52,9 +62,9 @@ const Net = G.Net = {
     peer.on('open', () => { if (this.peer === peer && !this.linked) this.status('waiting', 'Waiting for your friend to join…'); clearTimeout(this.tmo); });
     peer.on('connection', c => {
       if (this.peer !== peer) return;
-      const busy = this.conn && this.conn.open && this.linked;
-      // before the race a new arrival is almost always our friend after a reload, so they take the seat back
-      if (busy && !this.canReplace() && performance.now() - this.lastSeen < DEAD_AFTER) {
+      // the same player coming back always gets their seat; before the race a new arrival is almost always our friend after a reload
+      const same = this.seat && c.metadata && c.metadata.seat === this.seat;
+      if (!same && this.holdSeat) {
         // already racing someone who's still there
         c.on('open', () => { c.send({ t: '_full' }); setTimeout(() => c.close(), 300); });
         return;
@@ -94,6 +104,9 @@ const Net = G.Net = {
     this.role = this.lastRole = 'guest';
     this.code = code.toUpperCase();
     store.set('n4968n-join', this.code); store.set('n4968n-host', null);
+    if (!store.get('n4968n-seat')) store.set('n4968n-seat', Math.random().toString(36).slice(2));
+    this.seat = store.get('n4968n-seat');
+    if (this.holdSeat) { this.startGrace(); this.graceDial = performance.now() + GRACE; }
     this.status('connecting', 'Looking for race ' + this.code + '…');
     this.armTimeout(`Couldn't reach race ${this.code}. Make sure your friend still has the invite screen open, then press Try again.`);
     this.guestPeer();
@@ -122,12 +135,12 @@ const Net = G.Net = {
   // call the host, and call again every 3 seconds until we're linked or time runs out
   dial() {
     if (this.linked || !this.peer || this.peer.destroyed || this.role !== 'guest') return;
-    if (performance.now() > this.deadline) return;
+    if (performance.now() > Math.max(this.deadline, this.graceDial || 0)) return;
     if (!this.peer.disconnected) {
       const old = this.conn;
       if (!old || !old.open) {
         if (old) { this.conn = null; try { old.close(); } catch (e) {} }
-        this.attach(this.peer.connect(PREFIX + this.code.toLowerCase(), { reliable: true, serialization: 'json' }));
+        this.attach(this.peer.connect(PREFIX + this.code.toLowerCase(), { reliable: true, serialization: 'json', metadata: { seat: this.seat } }));
       }
     }
     clearTimeout(this.dialT);
@@ -157,6 +170,7 @@ const Net = G.Net = {
       if (d.t === '_hi') { try { c.send({ t: '_ack' }); } catch (e) {} if (this.role === 'host') this.linkUp(c); return; }
       if (d.t === '_ack') { if (this.role === 'guest') this.linkUp(c); return; }
       if (d.t === '_p') return;
+      if (d.t === '_bye') { this.conn = null; this.linked = false; this.holdSeat = false; clearTimeout(this.graceT); try { c.close(); } catch (e) {} this.onClose(); return; }
       if (d.t === '_full') { this.status('error', 'That race already has two players.'); this.leave(); return; }
       if (!this.linked) this.linkUp(c);   // a real message means we're talking
       this.onMsg(d);
@@ -170,7 +184,8 @@ const Net = G.Net = {
   },
   linkUp(c) {
     if (this.linked || this.conn !== c) return;
-    this.linked = true; clearTimeout(this.tmo); clearTimeout(this.dialT);
+    this.linked = true; clearTimeout(this.tmo); clearTimeout(this.dialT); clearTimeout(this.graceT); this.graceDial = 0;
+    if (this.role === 'host' && c.metadata && c.metadata.seat) { this.seat = c.metadata.seat; store.set('n4968n-seat', this.seat); }
     this.status('connected', 'Friend connected ✓');
     try { this.onOpen(); } catch (e) { console.error(e); }
   },
@@ -178,13 +193,18 @@ const Net = G.Net = {
     if (this.conn !== c) return;
     const was = this.linked;
     this.conn = null; this.linked = false;
-    if (was) this.onClose();
+    if (was && this.holdSeat) {
+      this.startGrace(); this.onDrop();
+      if (this.role === 'guest') { this.graceDial = performance.now() + GRACE; this.dial(); }
+    } else if (was) this.onClose();
     else if (this.role === 'guest') this.dial();
   },
   heartbeat() {
     const c = this.conn;
     if (!c || !c.open) return;
     try { c.send({ t: '_p' }); } catch (e) {}
+    // mid-race and silent for a while: the other side reloaded or lost signal, so stop waiting on this connection
+    if (this.linked && this.holdSeat && !document.hidden && performance.now() - this.lastSeen > DEAD_AFTER * 2) { try { c.close(); } catch (e) {} this.lost(c); }
   },
 
   // start over with the same code
@@ -195,11 +215,12 @@ const Net = G.Net = {
 
   leave(forget) {
     const c = this.conn, p = this.peer;
-    this.clearTimers(); clearTimeout(this.tmo);
-    this.conn = null; this.peer = null; this.role = null; this.linked = false;
-    if (forget) this.forget();
-    try { if (c) c.close(); } catch (e) {}
-    try { if (p) p.destroy(); } catch (e) {}
+    this.clearTimers(); clearTimeout(this.tmo); clearTimeout(this.graceT);
+    this.conn = null; this.peer = null; this.role = null; this.linked = false; this.graceDial = 0;
+    if (forget) { this.forget(); this.holdSeat = false; store.set('n4968n-seat', null); }
+    const close = () => { try { if (c) c.close(); } catch (e) {} try { if (p) p.destroy(); } catch (e) {} };
+    // leaving on purpose: say so, so the rival isn't left waiting for us to come back
+    if (forget && c && c.open) { try { c.send({ t: '_bye' }); } catch (e) {} setTimeout(close, 200); } else close();
   },
 };
 })();

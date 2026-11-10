@@ -129,6 +129,12 @@ function reset(o) {
   $('fMsg').classList.remove('on');
 }
 
+function restore(r) {
+  const s = state;
+  Object.assign(s.plane, { x: r.x, y: r.y, rot: r.rot });
+  Object.assign(s, { heading: r.heading, bank: r.bank, thr: r.thr, speed: r.speed, hull: r.hull, fuel: r.fuel, t: r.t, cam: r.cam, intro: Math.min(r.intro, 0) });
+}
+
 // ---------- input ----------
 const map = { ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd' };
 addEventListener('keydown', e => {
@@ -1003,7 +1009,7 @@ function drawBolts() {
 function draw() {
   const s = state, w = s.world, p = s.plane;
   const r = canvas.getBoundingClientRect();
-  dpr = Math.min(2, devicePixelRatio || 1);
+  dpr = G.Quality.dpr();
   if (canvas.width !== Math.round(r.width * dpr) || canvas.height !== Math.round(r.height * dpr)) { canvas.width = Math.round(r.width * dpr); canvas.height = Math.round(r.height * dpr); }
   W = canvas.width; H = canvas.height;
   if (!W || !H) return;   // hidden behind a menu: nothing to draw
@@ -1071,6 +1077,7 @@ function draw() {
 
 const fogs = Array.from({ length: 6 }, () => ({ x: Math.random() * 2, y: Math.random(), w: 0.5 + Math.random() * 0.5, a: 0.05 + Math.random() * 0.05, sp: 0.6 + Math.random() }));
 function screenFog(t, zoom) {
+  if (G.Quality.lite) return;
   const cam = state.cam;
   for (const f of fogs) {
     const fx = (((f.x * W - cam.x * zoom * 0.35 * f.sp + t * 18 * dpr) % (W * 2)) + W * 2) % (W * 2) - W * 0.5;
@@ -1155,8 +1162,8 @@ function step(dt) {
 }
 function frame(t) {
   if (!running) { looping = false; return; }
-  const dt = Math.min(0.05, (t - lastT) / 1000 || 0); lastT = t;
-  try { step(dt); draw(); } catch (e) { console.error(e); }
+  let left = Math.min(0.5, (t - lastT) / 1000 || 0); lastT = t;   // real time, in small steps, however slow the computer draws
+  try { while (left > 1e-4 && running) { const d = Math.min(1 / 30, left); step(d); left -= d; } if (running) draw(); } catch (e) { console.error(e); }
   requestAnimationFrame(frame);
 }
 setInterval(() => {   // keep flying if animation frames pause (background tab)
@@ -1174,10 +1181,17 @@ G.Flight = {
     reset(o);
     clearHud();
     $('flight').classList.remove('hidden');
-    if (!seenHowto) { state.howto = true; showHowto(); }
+    if (o.resume) restore(o.resume);
+    else if (!seenHowto) { state.howto = true; showHowto(); }
     startAudio();
     running = true; lastT = performance.now();
     if (!looping) { looping = true; requestAnimationFrame(frame); }
+  },
+  // enough to pick the flight back up after a page reload
+  snapshot() {
+    if (!running || !state) return null;
+    const s = state, p = s.plane;
+    return { x: p.x, y: p.y, rot: p.rot, heading: s.heading, bank: s.bank, thr: s.thr, speed: s.speed, hull: s.hull, fuel: s.fuel, t: s.t, cam: s.cam, intro: s.intro };
   },
   stop() { running = false; stopAudio(); clearHud(); $('flight').classList.add('hidden'); $('fMsg').classList.remove('on'); },
   setRival(r) {

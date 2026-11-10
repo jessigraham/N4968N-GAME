@@ -183,6 +183,7 @@ function overlay(c, w, h, strength = 0.78) {
   const v = c.createRadialGradient(w / 2, h * 0.45, Math.min(w, h) * 0.25, w / 2, h * 0.5, Math.max(w, h) * 0.75);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, `rgba(0,0,0,${strength})`);
   c.fillStyle = v; c.fillRect(0, 0, w, h);
+  if (G.Quality && G.Quality.lite) return;   // film grain is the first thing to go on a slow computer
   c.save();
   c.globalAlpha = 0.07; c.globalCompositeOperation = 'overlay';
   c.fillStyle = c.createPattern(grain, 'repeat');
